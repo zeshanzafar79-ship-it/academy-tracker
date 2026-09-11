@@ -1,0 +1,839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Academy Ledger</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  :root{
+    --bg:#EEF0E7;
+    --paper:#FFFFFF;
+    --ink:#1F2A24;
+    --muted:#6B7268;
+    --line:#D8DCCE;
+    --primary:#1B4332;
+    --primary-ink:#F3F6F1;
+    --accent:#C08A2E;
+    --accent-ink:#2A1F06;
+    --success:#2F6B4F;
+    --danger:#A63A3A;
+    --danger-bg:#F6E9E7;
+    --success-bg:#E9F1EB;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
+  #app{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);
+    display:flex;flex-direction:column;position:relative;padding-bottom:76px;}
+
+  header.top{background:var(--primary);color:var(--primary-ink);padding:18px 20px 16px;
+    position:sticky;top:0;z-index:5;}
+  header.top .brand{font-size:13px;letter-spacing:.02em;opacity:.75;margin-bottom:2px;}
+  header.top .title{font-size:22px;font-weight:700;}
+
+  main{flex:1;padding:16px 16px 8px;}
+
+  .section-label{font-size:12px;color:var(--muted);margin:18px 2px 8px;font-weight:600;}
+  .section-label:first-child{margin-top:0;}
+
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;}
+
+  .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+  .kpi{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px;}
+  .kpi .num{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;}
+  .kpi .lbl{font-size:11.5px;color:var(--muted);margin-top:2px;}
+  .kpi.accent{background:var(--primary);border-color:var(--primary);}
+  .kpi.accent .num,.kpi.accent .lbl{color:var(--primary-ink);}
+  .kpi.accent .lbl{opacity:.75;}
+
+  .ledger-row{display:flex;justify-content:space-between;align-items:center;
+    padding:11px 2px;border-bottom:1px solid var(--line);gap:10px;}
+  .ledger-row:last-child{border-bottom:none;}
+  .ledger-row .who{font-weight:600;font-size:14.5px;}
+  .ledger-row .sub{font-size:12px;color:var(--muted);margin-top:1px;}
+  .ledger-row .amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;}
+  .amt.pos{color:var(--success);}
+  .amt.neg{color:var(--danger);}
+  .tag{display:inline-block;font-size:10.5px;padding:2px 7px;border-radius:20px;margin-top:4px;font-weight:600;}
+  .tag.due{background:var(--danger-bg);color:var(--danger);}
+  .tag.clear{background:var(--success-bg);color:var(--success);}
+
+  .empty{text-align:center;padding:30px 10px;color:var(--muted);font-size:13.5px;}
+
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    background:var(--primary);color:var(--primary-ink);border:none;border-radius:9px;
+    padding:11px 16px;font-size:14px;font-weight:600;cursor:pointer;width:100%;}
+  .btn.gold{background:var(--accent);color:var(--accent-ink);}
+  .btn.ghost{background:transparent;color:var(--primary);border:1.5px solid var(--primary);}
+  .btn.small{width:auto;padding:7px 12px;font-size:12.5px;}
+  .btn.danger-ghost{background:transparent;color:var(--danger);border:1.5px solid var(--danger);}
+
+  .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:88px;max-width:448px;width:calc(100% - 32px);z-index:6;}
+
+  label{display:block;font-size:12.5px;color:var(--muted);margin:12px 0 5px;font-weight:600;}
+  label:first-child{margin-top:0;}
+  input,select,textarea{width:100%;padding:11px 12px;border:1.5px solid var(--line);border-radius:8px;
+    font-size:15px;background:var(--paper);color:var(--ink);font-family:inherit;}
+  input:focus,select:focus,textarea:focus{outline:none;border-color:var(--primary);}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
+
+  nav.tabs{position:fixed;bottom:0;left:0;right:0;background:var(--paper);border-top:1px solid var(--line);
+    display:flex;max-width:480px;margin:0 auto;z-index:5;}
+  nav.tabs button{flex:1;background:none;border:none;padding:10px 2px 9px;font-size:10.5px;
+    color:var(--muted);font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;}
+  nav.tabs button.active{color:var(--primary);}
+  nav.tabs .ic{font-size:19px;line-height:1;}
+
+  .subtabs{display:flex;gap:8px;margin-bottom:14px;}
+  .subtabs button{flex:1;padding:9px;border-radius:8px;border:1.5px solid var(--line);background:var(--paper);
+    color:var(--muted);font-weight:600;font-size:13px;cursor:pointer;}
+  .subtabs button.active{background:var(--primary);color:var(--primary-ink);border-color:var(--primary);}
+
+  .overlay{position:fixed;inset:0;background:rgba(20,26,22,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center;}
+  .sheet{background:var(--bg);width:100%;max-width:480px;border-radius:16px 16px 0 0;
+    max-height:92vh;overflow-y:auto;padding:18px 18px 24px;}
+  .sheet-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+  .sheet-head h3{margin:0;font-size:17px;}
+  .close-x{background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;padding:4px 8px;}
+
+  /* Slip */
+  #slipCapture{width:340px;background:var(--paper);padding:26px 22px;border-radius:2px;
+    background-image:repeating-linear-gradient(0deg,transparent,transparent 27px,var(--line) 28px);
+  }
+  .slip-wrap{display:flex;justify-content:center;padding:10px 0 16px;overflow-x:auto;}
+  .slip-head{text-align:center;border-bottom:2px dashed var(--primary);padding-bottom:12px;margin-bottom:14px;}
+  .slip-head .aname{font-size:16px;font-weight:700;color:var(--primary);letter-spacing:.01em;}
+  .slip-head .contact{font-size:11px;color:var(--muted);margin-top:1px;}
+  .slip-head .atype{font-size:11px;color:var(--muted);margin-top:6px;letter-spacing:.04em;}
+  .slip-row{display:flex;justify-content:space-between;font-size:13px;padding:5px 0;color:var(--ink);}
+  .slip-row .k{color:var(--muted);}
+  .slip-amount{text-align:center;margin:16px 0;}
+  .slip-amount .n{font-size:30px;font-weight:700;color:var(--primary);font-variant-numeric:tabular-nums;}
+  .slip-amount .l{font-size:11px;color:var(--muted);margin-top:2px;}
+  .slip-foot{border-top:1.5px dashed var(--line);margin-top:14px;padding-top:10px;
+    font-size:10.5px;color:var(--muted);text-align:center;}
+  .slip-badge{display:inline-block;font-size:10px;font-weight:700;padding:3px 10px;border-radius:20px;
+    background:var(--accent);color:var(--accent-ink);letter-spacing:.02em;}
+
+  .toast{position:fixed;bottom:96px;left:50%;transform:translateX(-50%);background:var(--ink);color:#fff;
+    padding:10px 18px;border-radius:20px;font-size:13px;z-index:30;max-width:80%;text-align:center;}
+</style>
+</head>
+<body>
+<div id="app">
+  <header class="top">
+    <div class="brand" id="brandLine" onclick="openSettingsForm()" style="cursor:pointer;">ACADEMY LEDGER ✎</div>
+    <div class="title" id="pageTitle">Dashboard</div>
+  </header>
+  <main id="main"></main>
+  <div id="fabZone"></div>
+  <nav class="tabs">
+    <button data-tab="dashboard" class="active"><span class="ic">🏠</span>Home</button>
+    <button data-tab="students"><span class="ic">🎓</span>Students</button>
+    <button data-tab="teachers"><span class="ic">🧑‍🏫</span>Teachers</button>
+    <button data-tab="money"><span class="ic">💵</span>Fees</button>
+    <button data-tab="expenses"><span class="ic">🧾</span>Expenses</button>
+  </nav>
+</div>
+<div id="modalZone"></div>
+
+<script>
+// ---------- storage helpers ----------
+const KEYS = ['students','teachers','payments','payouts','expenses','settings'];
+let DB = { students:[], teachers:[], payments:[], payouts:[], expenses:[],
+  settings:{academyName:"STARS ACADEMY RYK", contact:"03406703615", defaultTeacherPercent:70} };
+
+// Uses localStorage so data survives refresh / closing the browser — this file
+// runs standalone on the phone, not inside a Claude artifact, so window.storage
+// isn't available there.
+const LS_PREFIX = 'academyLedger_';
+async function loadAll(){
+  for(const k of KEYS){
+    try{
+      const raw = localStorage.getItem(LS_PREFIX+k);
+      if(raw!=null) DB[k] = JSON.parse(raw);
+    }catch(e){ console.error('load failed', k, e); }
+  }
+  migrateMultiSubject();
+}
+// One-time, idempotent upgrade: old students had a single subject/teacherId/monthlyFee.
+// New students have a `subjects` array so one student can take several subjects with
+// different teachers. Any student still missing `subjects` gets converted, and any of
+// their payments get tagged with which subject/teacher they belonged to.
+function migrateMultiSubject(){
+  let changed = false;
+  DB.students.forEach(s=>{
+    if(!s.subjects){
+      const subj = { id: uid(), subject: s.subject||'', teacherId: s.teacherId||null, monthlyFee: s.monthlyFee||0 };
+      DB.payments.forEach(p=>{
+        if(p.studentId===s.id && !p.subjectEntryId){
+          p.subjectEntryId = subj.id;
+          p.subjectName = subj.subject;
+          p.teacherId = s.teacherId||null;
+        }
+      });
+      s.subjects = [subj];
+      delete s.subject; delete s.teacherId; delete s.monthlyFee;
+      changed = true;
+    }
+  });
+  if(changed){ save('students'); save('payments'); }
+}
+async function save(key){
+  try{ localStorage.setItem(LS_PREFIX+key, JSON.stringify(DB[key])); }
+  catch(e){ console.error('storage save failed', key, e); showToast('Could not save — try again'); }
+}
+function exportBackup(){
+  const data = {}; KEYS.forEach(k=>data[k]=DB[k]);
+  const blob = new Blob([JSON.stringify(data,null,2)], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'academy-backup-'+todayISO()+'.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 2000);
+  showToast('Backup file downloaded');
+}
+function importBackup(file){
+  const reader = new FileReader();
+  reader.onload = async (e)=>{
+    try{
+      const data = JSON.parse(e.target.result);
+      KEYS.forEach(k=>{ if(data[k]!=null){ DB[k]=data[k]; } });
+      for(const k of KEYS) await save(k);
+      closeSheet(); render();
+      showToast('Backup restored');
+    }catch(err){ showToast('Could not read that file'); }
+  };
+  reader.readAsText(file);
+}
+function uid(){ return Date.now().toString(36)+Math.random().toString(36).slice(2,7); }
+function fmt(n){ n = Number(n)||0; return 'Rs ' + n.toLocaleString('en-PK',{maximumFractionDigits:0}); }
+function todayISO(){ return new Date().toISOString().slice(0,10); }
+function fmtDate(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+function monthLabel(iso){ const d=new Date(iso); return d.toLocaleDateString('en-US',{month:'short',year:'numeric'}); }
+
+// ---------- app state ----------
+let currentTab = 'dashboard';
+let moneySubtab = 'collect';
+
+function showToast(msg){
+  const t = document.createElement('div');
+  t.className='toast'; t.textContent=msg;
+  document.body.appendChild(t);
+  setTimeout(()=>t.remove(), 2400);
+}
+
+// ---------- derived calcs ----------
+// A payment can cover several of a student's subjects at once (e.g. Physics + English
+// paid together). paymentSplits() returns the per-subject breakdown for a payment,
+// whether it's a new multi-subject payment (has `.splits`) or an older single-subject
+// one (has subjectEntryId/subjectName/teacherId directly on it).
+function paymentSplits(p){
+  if(Array.isArray(p.splits)) return p.splits;
+  return [{ subjectEntryId: p.subjectEntryId||null, subjectName: p.subjectName||'',
+    teacherId: p.teacherId||null, amount: p.amount, academyShare: p.academyShare, teacherShare: p.teacherShare }];
+}
+function teacherTotals(teacherId){
+  const earned = DB.payments.reduce((a,p)=>{
+    const owed = paymentSplits(p).filter(sp=>sp.teacherId===teacherId)
+      .reduce((b,sp)=>b+Number(sp.teacherShare),0);
+    return a+owed;
+  },0);
+  const paid = DB.payouts.filter(p=>p.teacherId===teacherId).reduce((a,p)=>a+Number(p.amount),0);
+  const t = DB.teachers.find(x=>x.id===teacherId);
+  const due = (t && t.owner) ? 0 : (earned-paid); // owner's share is already theirs — never "due"
+  return {earned, paid, due};
+}
+function studentPaidTotal(studentId){
+  return DB.payments.filter(p=>p.studentId===studentId).reduce((a,p)=>a+Number(p.amount),0);
+}
+
+// ---------- render router ----------
+function render(){
+  document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===currentTab));
+  const titles = {dashboard:'Dashboard', students:'Students', teachers:'Teachers', money:'Fees & Payouts', expenses:'Expenses'};
+  document.getElementById('pageTitle').textContent = titles[currentTab];
+  document.getElementById('brandLine').textContent = (DB.settings.academyName||'MY ACADEMY').toUpperCase();
+  const main = document.getElementById('main');
+  const fab = document.getElementById('fabZone');
+  fab.innerHTML='';
+  if(currentTab==='dashboard') { main.innerHTML = renderDashboard(); }
+  else if(currentTab==='students'){ main.innerHTML = renderStudents(); fab.innerHTML = fabBtn('+ Add student','openStudentForm()'); }
+  else if(currentTab==='teachers'){ main.innerHTML = renderTeachers(); fab.innerHTML = fabBtn('+ Add teacher','openTeacherForm()'); }
+  else if(currentTab==='money'){ main.innerHTML = renderMoney();
+    fab.innerHTML = fabBtn(moneySubtab==='collect' ? '+ Collect fee' : '+ Pay teacher',
+      moneySubtab==='collect' ? 'openPaymentForm()' : 'openPayoutForm()'); }
+  else if(currentTab==='expenses'){ main.innerHTML = renderExpenses(); fab.innerHTML = fabBtn('+ Add expense','openExpenseForm()'); }
+}
+function fabBtn(label, onclick){
+  return `<button class="btn gold fab" onclick="${onclick}">${label}</button>`;
+}
+
+// ---------- Dashboard ----------
+function renderDashboard(){
+  const totalFees = DB.payments.reduce((a,p)=>a+Number(p.amount),0);
+  const academyShare = DB.payments.reduce((a,p)=>a+Number(p.academyShare),0);
+  const teacherDue = DB.teachers.reduce((a,t)=>a+teacherTotals(t.id).due,0);
+  const totalExpenses = DB.expenses.reduce((a,e)=>a+Number(e.amount),0);
+  const net = academyShare - totalExpenses;
+  const myTotal = DB.payments.reduce((a,p)=>{
+    const physicsAmt = paymentSplits(p).filter(sp=>(sp.subjectName||'').trim().toLowerCase()==='physics')
+      .reduce((b,sp)=>b+Number(sp.amount),0);
+    return a+physicsAmt;
+  },0);
+
+  const recent = [
+    ...DB.payments.map(p=>({t:'fee', date:p.date, name:(DB.students.find(s=>s.id===p.studentId)||{}).name||'Student', amount:p.amount})),
+    ...DB.payouts.map(p=>({t:'payout', date:p.date, name:(DB.teachers.find(s=>s.id===p.teacherId)||{}).name||'Teacher', amount:p.amount})),
+    ...DB.expenses.map(e=>({t:'expense', date:e.date, name:e.title, amount:e.amount})),
+  ].sort((a,b)=> (b.date||'').localeCompare(a.date||'')).slice(0,6);
+
+  let recentHtml = recent.length ? recent.map(r=>`
+    <div class="ledger-row">
+      <div><div class="who">${escapeHtml(r.name)}</div>
+        <div class="sub">${r.t==='fee'?'Fee received':r.t==='payout'?'Paid to teacher':'Expense'} · ${fmtDate(r.date)}</div></div>
+      <div class="amt ${r.t==='fee'?'pos':'neg'}">${r.t==='fee'?'+':'−'}${fmt(r.amount)}</div>
+    </div>`).join('') : `<div class="empty">No activity yet — start by collecting a fee.</div>`;
+
+  return `
+    <div class="kpi-grid">
+      <div class="kpi accent"><div class="num">${fmt(totalFees)}</div><div class="lbl">Total fees received</div></div>
+      <div class="kpi"><div class="num">${fmt(academyShare)}</div><div class="lbl">Academy share</div></div>
+      <div class="kpi"><div class="num" style="color:${teacherDue>0?'var(--danger)':'var(--success)'}">${fmt(teacherDue)}</div><div class="lbl">Owed to teachers</div></div>
+      <div class="kpi"><div class="num">${fmt(net)}</div><div class="lbl">Net (after expenses)</div></div>
+      <div class="kpi accent"><div class="num">${fmt(myTotal)}</div><div class="lbl">My total (Physics)</div></div>
+    </div>
+    <div class="section-label">Recent activity</div>
+    <div class="card">${recentHtml}</div>
+  `;
+}
+
+// ---------- Students ----------
+function renderStudents(){
+  if(!DB.students.length) return `<div class="empty">No students yet. Tap "+ Add student" to get started.</div>`;
+  const rows = DB.students.map(s=>{
+    const paid = studentPaidTotal(s.id);
+    const subsLabel = (s.subjects||[]).map(sub=>{
+      const t = DB.teachers.find(t=>t.id===sub.teacherId);
+      return escapeHtml(sub.subject||'Subject') + (t?' ('+escapeHtml(t.name)+')':'');
+    }).join(', ') || '—';
+    return `<div class="ledger-row" onclick="openStudentDetail('${s.id}')" style="cursor:pointer;">
+      <div><div class="who">${escapeHtml(s.name)}</div>
+        <div class="sub">${escapeHtml(s.className||'—')} · ${subsLabel}</div></div>
+      <div class="amt pos">${fmt(paid)}</div>
+    </div>`;
+  }).join('');
+  return `<div class="card">${rows}</div>`;
+}
+function openStudentDetail(id){
+  const s = DB.students.find(x=>x.id===id); if(!s) return;
+  const pays = DB.payments.filter(p=>p.studentId===id).sort((a,b)=>b.date.localeCompare(a.date));
+  const subjRows = (s.subjects||[]).map(sub=>{
+    const t = DB.teachers.find(t=>t.id===sub.teacherId);
+    return `<div class="ledger-row">
+      <div><div class="who">${escapeHtml(sub.subject||'Subject')}</div><div class="sub">${t?escapeHtml(t.name):'Unassigned teacher'}</div></div>
+      <div class="amt pos">${fmt(sub.monthlyFee)}</div>
+    </div>`;
+  }).join('') || `<div class="empty">No subjects added.</div>`;
+  const rows = pays.length ? pays.map(p=>{
+    const subjLabel = paymentSplits(p).map(sp=>sp.subjectName).filter(Boolean).join(', ');
+    return `
+    <div class="ledger-row">
+      <div><div class="who">${fmt(p.amount)}</div><div class="sub">${fmtDate(p.date)}${subjLabel?' · '+escapeHtml(subjLabel):''}${p.month?' · '+escapeHtml(p.month):''}</div></div>
+      <button class="btn ghost small" onclick="generateSlip('fee','${p.id}')">Slip</button>
+    </div>`;
+  }).join('') : `<div class="empty">No payments logged yet.</div>`;
+  openSheet(escapeHtml(s.name), `
+    <div class="card">
+      <div class="ledger-row"><div class="sub">Class / Batch</div><div class="who">${escapeHtml(s.className||'—')}</div></div>
+      <div class="ledger-row"><div class="sub">Phone</div><div class="who">${escapeHtml(s.phone||'—')}</div></div>
+    </div>
+    <div class="section-label">Subjects</div>
+    <div class="card">${subjRows}</div>
+    <div class="section-label">Payment history</div>
+    <div class="card">${rows}</div>
+    <button class="btn ghost" style="margin-top:6px;" onclick="openStudentForm('${id}')">Edit student</button>
+    <button class="btn danger-ghost" style="margin-top:10px;" onclick="deleteStudent('${id}')">Remove student</button>
+  `);
+}
+function deleteStudent(id){
+  DB.students = DB.students.filter(s=>s.id!==id);
+  save('students'); closeSheet(); render();
+  showToast('Student removed');
+}
+let editingSubjects = []; // working copy of the subjects list while the student form is open
+
+function openStudentForm(id){
+  const editing = id ? DB.students.find(s=>s.id===id) : null;
+  editingSubjects = (editing && editing.subjects && editing.subjects.length)
+    ? editing.subjects.map(s=>({...s}))
+    : [{id: uid(), subject:'', teacherId:'', monthlyFee:''}];
+  openSheet(editing?'Edit student':'Add student', `
+    <label>Student name</label><input id="f_name" placeholder="e.g. Ali Raza" value="${editing?escapeHtml(editing.name):''}">
+    <div class="row2">
+      <div><label>Class / Batch</label><input id="f_class" placeholder="FSc 1st Year" value="${editing?escapeHtml(editing.className||''):''}"></div>
+      <div><label>Phone (optional)</label><input id="f_phone" placeholder="03xx-xxxxxxx" value="${editing?escapeHtml(editing.phone||''):''}"></div>
+    </div>
+    <div class="section-label" style="margin-top:18px;">Subjects</div>
+    <div id="subjectsContainer">${renderSubjectRows()}</div>
+    <button class="btn ghost small" onclick="addSubjectRow()">+ Add another subject</button>
+    <button class="btn" style="margin-top:16px;" onclick="saveStudent(${editing?`'${id}'`:'null'})">${editing?'Save changes':'Save student'}</button>
+  `);
+}
+function renderSubjectRows(){
+  return editingSubjects.map((row,i)=>{
+    const teacherOpts = DB.teachers.map(t=>`<option value="${t.id}" ${row.teacherId===t.id?'selected':''}>${escapeHtml(t.name)}</option>`).join('');
+    return `
+    <div class="card" style="margin-bottom:8px;">
+      <div class="row2">
+        <div><label>Subject</label><input id="sub_subject_${i}" placeholder="e.g. Physics" value="${escapeHtml(row.subject||'')}"></div>
+        <div><label>Monthly fee (Rs)</label><input id="sub_fee_${i}" type="number" placeholder="5000" value="${row.monthlyFee||''}"></div>
+      </div>
+      <label>Teacher</label><select id="sub_teacher_${i}"><option value="">Unassigned</option>${teacherOpts}</select>
+      ${editingSubjects.length>1?`<button class="btn danger-ghost small" style="margin-top:8px;" onclick="removeSubjectRow(${i})">Remove this subject</button>`:''}
+    </div>`;
+  }).join('');
+}
+function syncSubjectsFromDOM(){
+  editingSubjects = editingSubjects.map((row,i)=>({
+    id: row.id,
+    subject: (document.getElementById('sub_subject_'+i)?.value ?? row.subject).trim(),
+    teacherId: document.getElementById('sub_teacher_'+i)?.value || null,
+    monthlyFee: Number(document.getElementById('sub_fee_'+i)?.value)||0
+  }));
+}
+function addSubjectRow(){
+  syncSubjectsFromDOM();
+  editingSubjects.push({id: uid(), subject:'', teacherId:'', monthlyFee:''});
+  document.getElementById('subjectsContainer').innerHTML = renderSubjectRows();
+}
+function removeSubjectRow(i){
+  syncSubjectsFromDOM();
+  if(editingSubjects.length<=1){ showToast('A student needs at least one subject'); return; }
+  editingSubjects.splice(i,1);
+  document.getElementById('subjectsContainer').innerHTML = renderSubjectRows();
+}
+function saveStudent(id){
+  const name = document.getElementById('f_name').value.trim();
+  if(!name){ showToast('Enter a student name'); return; }
+  syncSubjectsFromDOM();
+  const subjects = editingSubjects.filter(r=>r.subject);
+  if(!subjects.length){ showToast('Add at least one subject'); return; }
+  const data = {
+    name,
+    className: document.getElementById('f_class').value.trim(),
+    phone: document.getElementById('f_phone').value.trim(),
+    subjects
+  };
+  if(id){
+    const idx = DB.students.findIndex(s=>s.id===id);
+    if(idx>-1) DB.students[idx] = {...DB.students[idx], ...data};
+  } else {
+    DB.students.push({id: uid(), ...data});
+  }
+  save('students'); closeSheet(); render();
+  showToast(id?'Student updated':'Student added');
+}
+
+// ---------- Teachers ----------
+function renderTeachers(){
+  if(!DB.teachers.length) return `<div class="empty">No teachers yet. Tap "+ Add teacher" to get started.</div>`;
+  const rows = DB.teachers.map(t=>{
+    const tt = teacherTotals(t.id);
+    return `<div class="ledger-row" onclick="openTeacherDetail('${t.id}')" style="cursor:pointer;">
+      <div><div class="who">${escapeHtml(t.name)}${t.owner?' <span style="font-size:10px;color:var(--accent);font-weight:700;">(YOU)</span>':''}</div>
+        <div class="sub">${escapeHtml(t.subject||'—')} · ${t.sharePercent}% share</div>
+        <span class="tag ${tt.due>0?'due':'clear'}">${tt.due>0? fmt(tt.due)+' due' : (t.owner?'Kept by you':'Settled')}</span></div>
+      <div class="amt pos">${fmt(tt.earned)}</div>
+    </div>`;
+  }).join('');
+  return `<div class="card">${rows}</div>`;
+}
+function openTeacherDetail(id){
+  const t = DB.teachers.find(x=>x.id===id); if(!t) return;
+  const tt = teacherTotals(id);
+  const payouts = DB.payouts.filter(p=>p.teacherId===id).sort((a,b)=>b.date.localeCompare(a.date));
+  const rows = payouts.length ? payouts.map(p=>`
+    <div class="ledger-row">
+      <div><div class="who">${fmt(p.amount)}</div><div class="sub">${fmtDate(p.date)}${p.note?' · '+escapeHtml(p.note):''}</div></div>
+      <button class="btn ghost small" onclick="generateSlip('payout','${p.id}')">Slip</button>
+    </div>`).join('') : `<div class="empty">No payouts logged yet.</div>`;
+  openSheet(escapeHtml(t.name), `
+    <div class="card">
+      <div class="ledger-row"><div class="sub">Subject</div><div class="who">${escapeHtml(t.subject||'—')}</div></div>
+      <div class="ledger-row"><div class="sub">Share</div><div class="who">${t.sharePercent}%</div></div>
+      <div class="ledger-row"><div class="sub">Earned total</div><div class="who">${fmt(tt.earned)}</div></div>
+      <div class="ledger-row"><div class="sub">Paid so far</div><div class="who">${fmt(tt.paid)}</div></div>
+      <div class="ledger-row"><div class="sub">Due now</div><div class="who" style="color:${tt.due>0?'var(--danger)':'var(--success)'}">${fmt(tt.due)}</div></div>
+      ${t.owner?`<div class="empty" style="padding:10px 2px;text-align:left;">This is you — your share is kept automatically, no payout needed.</div>`:''}
+    </div>
+    <div class="section-label">Payout history</div>
+    <div class="card">${rows}</div>
+    <button class="btn ghost" style="margin-top:6px;" onclick="openTeacherForm('${id}')">Edit teacher</button>
+    <button class="btn danger-ghost" style="margin-top:10px;" onclick="deleteTeacher('${id}')">Remove teacher</button>
+  `);
+}
+function deleteTeacher(id){
+  DB.teachers = DB.teachers.filter(t=>t.id!==id);
+  save('teachers'); closeSheet(); render();
+  showToast('Teacher removed');
+}
+function openTeacherForm(id){
+  const editing = id ? DB.teachers.find(t=>t.id===id) : null;
+  openSheet(editing?'Edit teacher':'Add teacher', `
+    <label>Teacher name</label><input id="f_tname" placeholder="e.g. Mr. Ahmed" value="${editing?escapeHtml(editing.name):''}">
+    <label>Subject</label><input id="f_tsubject" placeholder="Physics" value="${editing?escapeHtml(editing.subject||''):''}">
+    <label>Teacher's share (%)</label><input id="f_tshare" type="number" value="${editing?editing.sharePercent:DB.settings.defaultTeacherPercent}">
+    <label>Phone (optional)</label><input id="f_tphone" placeholder="03xx-xxxxxxx" value="${editing?escapeHtml(editing.phone||''):''}">
+    <label style="display:flex;align-items:center;gap:8px;margin-top:16px;cursor:pointer;">
+      <input type="checkbox" id="f_towner" style="width:auto;margin:0;" ${editing&&editing.owner?'checked':''}>
+      <span style="font-size:13px;color:var(--ink);font-weight:600;">This is me (academy owner) — my share is never "due"</span>
+    </label>
+    <button class="btn" style="margin-top:16px;" onclick="saveTeacher(${editing?`'${id}'`:'null'})">${editing?'Save changes':'Save teacher'}</button>
+  `);
+}
+function saveTeacher(id){
+  const name = document.getElementById('f_tname').value.trim();
+  if(!name){ showToast('Enter a teacher name'); return; }
+  const data = {
+    name,
+    subject: document.getElementById('f_tsubject').value.trim(),
+    sharePercent: Number(document.getElementById('f_tshare').value)||DB.settings.defaultTeacherPercent,
+    phone: document.getElementById('f_tphone').value.trim(),
+    owner: document.getElementById('f_towner').checked
+  };
+  if(id){
+    const idx = DB.teachers.findIndex(t=>t.id===id);
+    if(idx>-1) DB.teachers[idx] = {...DB.teachers[idx], ...data};
+  } else {
+    DB.teachers.push({id: uid(), ...data});
+  }
+  save('teachers'); closeSheet(); render();
+  showToast(id?'Teacher updated':'Teacher added');
+}
+
+// ---------- Money (Fees / Payouts) ----------
+function renderMoney(){
+  let html = `<div class="subtabs">
+    <button class="${moneySubtab==='collect'?'active':''}" onclick="setMoneySubtab('collect')">Fees collected</button>
+    <button class="${moneySubtab==='payout'?'active':''}" onclick="setMoneySubtab('payout')">Teacher payouts</button>
+  </div>`;
+  if(moneySubtab==='collect'){
+    const list = [...DB.payments].sort((a,b)=>b.date.localeCompare(a.date));
+    html += list.length ? `<div class="card">${list.map(p=>{
+      const s = DB.students.find(s=>s.id===p.studentId);
+      const subjLabel = paymentSplits(p).map(sp=>sp.subjectName).filter(Boolean).join(', ');
+      return `<div class="ledger-row">
+        <div><div class="who">${s?escapeHtml(s.name):'Student'}${subjLabel?' · '+escapeHtml(subjLabel):''}</div>
+          <div class="sub">${fmtDate(p.date)} · ${escapeHtml(p.month||'')} · Academy ${fmt(p.academyShare)} / Teacher ${fmt(p.teacherShare)}</div></div>
+        <div style="text-align:right;">
+          <div class="amt pos">${fmt(p.amount)}</div>
+          <button class="btn ghost small" style="margin-top:5px;" onclick="generateSlip('fee','${p.id}')">Slip</button>
+        </div>
+      </div>`;
+    }).join('')}</div>` : `<div class="empty">No fee payments logged yet.</div>`;
+  } else {
+    const list = [...DB.payouts].sort((a,b)=>b.date.localeCompare(a.date));
+    html += list.length ? `<div class="card">${list.map(p=>{
+      const t = DB.teachers.find(t=>t.id===p.teacherId);
+      return `<div class="ledger-row">
+        <div><div class="who">${t?escapeHtml(t.name):'Teacher'}</div>
+          <div class="sub">${fmtDate(p.date)}${p.note?' · '+escapeHtml(p.note):''}</div></div>
+        <div style="text-align:right;">
+          <div class="amt neg">${fmt(p.amount)}</div>
+          <button class="btn ghost small" style="margin-top:5px;" onclick="generateSlip('payout','${p.id}')">Slip</button>
+        </div>
+      </div>`;
+    }).join('')}</div>` : `<div class="empty">No teacher payouts logged yet.</div>`;
+  }
+  return html;
+}
+function setMoneySubtab(v){ moneySubtab=v; render(); }
+
+function openPaymentForm(){
+  if(!DB.students.length){ showToast('Add a student first'); return; }
+  const opts = DB.students.map(s=>`<option value="${s.id}">${escapeHtml(s.name)} — ${escapeHtml(s.className||'')}</option>`).join('');
+  openSheet('Collect fee', `
+    <label>Student</label><select id="p_student" onchange="prefillFee()">${opts}</select>
+    <div class="section-label" style="margin-top:14px;">This student's subjects</div>
+    <div class="card" id="subjectBreakdown"></div>
+    <div class="row2" style="margin-top:4px;">
+      <div><label>Amount received (Rs)</label><input id="p_amount" type="number" oninput="splitPreview()"></div>
+      <div><label>Date</label><input id="p_date" type="date" value="${todayISO()}"></div>
+    </div>
+    <label>Month this fee is for</label><input id="p_month" placeholder="e.g. Sep-2026">
+    <div class="section-label" style="margin-top:14px;">Goes to</div>
+    <div class="card" id="splitPreview"></div>
+    <label>Note (optional)</label><input id="p_note" placeholder="e.g. paid partial">
+    <button class="btn" style="margin-top:16px;" onclick="savePayment()">Save & generate slip</button>
+  `);
+  prefillFee();
+}
+// Splits a total amount across a student's subjects proportional to each subject's own
+// monthly fee (equal split if fees are all zero), then applies each subject's teacher %.
+function computeSplits(s, totalAmount){
+  const subs = (s && s.subjects) || [];
+  if(!subs.length) return [];
+  const totalFee = subs.reduce((a,x)=>a+Number(x.monthlyFee||0),0);
+  const rounded = Math.round(Number(totalAmount)||0);
+  const raw = subs.map(sub=>{
+    const share = totalFee>0 ? Number(sub.monthlyFee||0)/totalFee : 1/subs.length;
+    return { sub, amount: Math.round(rounded*share) };
+  });
+  const diff = rounded - raw.reduce((a,r)=>a+r.amount,0);
+  if(raw.length) raw[raw.length-1].amount += diff; // fix rounding so it adds up exactly
+  return raw.map(r=>{
+    const t = DB.teachers.find(t=>t.id===r.sub.teacherId);
+    const tPct = t ? t.sharePercent : DB.settings.defaultTeacherPercent;
+    const teacherShare = Math.round(r.amount * tPct/100);
+    return { subjectEntryId: r.sub.id, subjectName: r.sub.subject, teacherId: r.sub.teacherId||null,
+      amount: r.amount, teacherShare, academyShare: r.amount - teacherShare };
+  });
+}
+function currentPaymentStudent(){
+  return DB.students.find(x=>x.id===document.getElementById('p_student').value);
+}
+function prefillFee(){
+  const s = currentPaymentStudent();
+  const subs = (s && s.subjects) || [];
+  document.getElementById('subjectBreakdown').innerHTML = subs.length ? subs.map(sub=>{
+    const t = DB.teachers.find(t=>t.id===sub.teacherId);
+    return `<div class="ledger-row"><div><div class="who">${escapeHtml(sub.subject||'Subject')}</div>
+      <div class="sub">${t?escapeHtml(t.name):'Unassigned'}</div></div><div class="amt pos">${fmt(sub.monthlyFee)}</div></div>`;
+  }).join('') : `<div class="empty">No subjects on this student.</div>`;
+  const totalFee = subs.reduce((a,x)=>a+Number(x.monthlyFee||0),0);
+  document.getElementById('p_amount').value = totalFee || '';
+  document.getElementById('p_month').value = monthLabel(todayISO());
+  splitPreview();
+}
+function splitPreview(){
+  const s = currentPaymentStudent();
+  const amt = Number(document.getElementById('p_amount').value)||0;
+  const splits = computeSplits(s, amt);
+  document.getElementById('splitPreview').innerHTML = splits.length ? splits.map(sp=>{
+    const t = DB.teachers.find(t=>t.id===sp.teacherId);
+    return `<div class="ledger-row"><div><div class="who">${escapeHtml(sp.subjectName||'Subject')}</div>
+      <div class="sub">${t?escapeHtml(t.name):'Unassigned'} · Academy ${fmt(sp.academyShare)}</div></div>
+      <div class="amt pos">${fmt(sp.teacherShare)}</div></div>`;
+  }).join('') : '';
+}
+function savePayment(){
+  const s = currentPaymentStudent();
+  const amount = Number(document.getElementById('p_amount').value)||0;
+  if(!amount){ showToast('Enter an amount'); return; }
+  if(!s || !(s.subjects||[]).length){ showToast('This student has no subjects'); return; }
+  const splits = computeSplits(s, amount);
+  const academyShare = splits.reduce((a,sp)=>a+sp.academyShare,0);
+  const teacherShare = splits.reduce((a,sp)=>a+sp.teacherShare,0);
+  const rec = { id: uid(), studentId: s.id, splits, amount, academyShare, teacherShare,
+    date: document.getElementById('p_date').value || todayISO(),
+    month: document.getElementById('p_month').value.trim(),
+    note: document.getElementById('p_note').value.trim() };
+  DB.payments.push(rec);
+  save('payments'); closeSheet(); render();
+  generateSlip('fee', rec.id);
+}
+
+function openPayoutForm(){
+  if(!DB.teachers.length){ showToast('Add a teacher first'); return; }
+  const opts = DB.teachers.map(t=>{
+    const tt = teacherTotals(t.id);
+    return `<option value="${t.id}">${escapeHtml(t.name)} (due ${fmt(tt.due)})</option>`;
+  }).join('');
+  openSheet('Pay teacher', `
+    <label>Teacher</label><select id="o_teacher">${opts}</select>
+    <div class="row2">
+      <div><label>Amount paid (Rs)</label><input id="o_amount" type="number"></div>
+      <div><label>Date</label><input id="o_date" type="date" value="${todayISO()}"></div>
+    </div>
+    <label>Note (optional)</label><input id="o_note" placeholder="e.g. Sep salary share">
+    <button class="btn" style="margin-top:16px;" onclick="savePayout()">Save & generate slip</button>
+  `);
+}
+function savePayout(){
+  const teacherId = document.getElementById('o_teacher').value;
+  const amount = Number(document.getElementById('o_amount').value)||0;
+  if(!amount){ showToast('Enter an amount'); return; }
+  const rec = { id: uid(), teacherId, amount,
+    date: document.getElementById('o_date').value || todayISO(),
+    note: document.getElementById('o_note').value.trim() };
+  DB.payouts.push(rec);
+  save('payouts'); closeSheet(); render();
+  generateSlip('payout', rec.id);
+}
+
+// ---------- Expenses ----------
+function renderExpenses(){
+  if(!DB.expenses.length) return `<div class="empty">No expenses logged yet.</div>`;
+  const list = [...DB.expenses].sort((a,b)=>b.date.localeCompare(a.date));
+  const rows = list.map(e=>`
+    <div class="ledger-row">
+      <div><div class="who">${escapeHtml(e.title)}</div><div class="sub">${escapeHtml(e.category||'')} · ${fmtDate(e.date)}</div></div>
+      <div class="amt neg">${fmt(e.amount)}</div>
+    </div>`).join('');
+  return `<div class="card">${rows}</div>`;
+}
+function openExpenseForm(){
+  openSheet('Add expense', `
+    <label>What was it for</label><input id="e_title" placeholder="e.g. Electricity bill">
+    <div class="row2">
+      <div><label>Amount (Rs)</label><input id="e_amount" type="number"></div>
+      <div><label>Date</label><input id="e_date" type="date" value="${todayISO()}"></div>
+    </div>
+    <label>Category</label>
+    <select id="e_category">
+      <option>Rent</option><option>Utilities</option><option>Stationery</option>
+      <option>Salary</option><option>Maintenance</option><option>Other</option>
+    </select>
+    <button class="btn" style="margin-top:16px;" onclick="saveExpense()">Save expense</button>
+  `);
+}
+function saveExpense(){
+  const title = document.getElementById('e_title').value.trim();
+  const amount = Number(document.getElementById('e_amount').value)||0;
+  if(!title || !amount){ showToast('Enter a description and amount'); return; }
+  DB.expenses.push({ id: uid(), title, amount,
+    date: document.getElementById('e_date').value || todayISO(),
+    category: document.getElementById('e_category').value });
+  save('expenses'); closeSheet(); render();
+  showToast('Expense added');
+}
+
+// ---------- Settings ----------
+function openSettingsForm(){
+  openSheet('Academy info', `
+    <label>Academy name</label><input id="s_name" value="${escapeHtml(DB.settings.academyName||'')}">
+    <label>Contact number</label><input id="s_contact" value="${escapeHtml(DB.settings.contact||'')}" placeholder="03xx-xxxxxxx">
+    <label>Default teacher share (%)</label><input id="s_pct" type="number" value="${DB.settings.defaultTeacherPercent}">
+    <button class="btn" style="margin-top:16px;" onclick="saveSettings()">Save</button>
+    <div class="section-label" style="margin-top:20px;">Backup</div>
+    <button class="btn ghost" onclick="exportBackup()">Download backup file</button>
+    <label style="margin-top:14px;">Restore from backup file</label>
+    <input id="s_restore" type="file" accept="application/json" onchange="if(this.files[0]) importBackup(this.files[0])">
+  `);
+}
+function saveSettings(){
+  DB.settings.academyName = document.getElementById('s_name').value.trim() || 'My Academy';
+  DB.settings.contact = document.getElementById('s_contact').value.trim();
+  DB.settings.defaultTeacherPercent = Number(document.getElementById('s_pct').value)||70;
+  save('settings'); closeSheet(); render();
+  showToast('Saved');
+}
+
+// ---------- Sheet / modal ----------
+function openSheet(title, bodyHtml){
+  document.getElementById('modalZone').innerHTML = `
+    <div class="overlay" id="ov" onclick="if(event.target.id==='ov')closeSheet()">
+      <div class="sheet">
+        <div class="sheet-head"><h3>${title}</h3><button class="close-x" onclick="closeSheet()">✕</button></div>
+        ${bodyHtml}
+      </div>
+    </div>`;
+}
+function closeSheet(){ document.getElementById('modalZone').innerHTML=''; }
+
+// ---------- Slip generation ----------
+function generateSlip(type, recordId){
+  let bodyHtml;
+  const academyName = DB.settings.academyName || 'My Academy';
+  const academyContact = DB.settings.contact ? 'Contact: '+DB.settings.contact : '';
+  if(type==='fee'){
+    const p = DB.payments.find(x=>x.id===recordId);
+    const s = DB.students.find(x=>x.id===p.studentId);
+    const splits = paymentSplits(p);
+    const itemRows = splits.map(sp=>
+      `<div class="slip-row"><span class="k">${escapeHtml(sp.subjectName||'Subject')}</span><span>${fmt(sp.amount)}</span></div>`
+    ).join('');
+    bodyHtml = `
+      <div class="slip-head">
+        <div class="aname">${escapeHtml(academyName)}</div>
+        ${academyContact?`<div class="contact">${escapeHtml(academyContact)}</div>`:''}
+        <div class="atype">FEE RECEIPT</div>
+      </div>
+      <div class="slip-row"><span class="k">Student</span><span>${escapeHtml(s?s.name:'—')}</span></div>
+      <div class="slip-row"><span class="k">Class</span><span>${escapeHtml(s?(s.className||''):'')}</span></div>
+      <div class="slip-row"><span class="k">Month</span><span>${escapeHtml(p.month||'—')}</span></div>
+      <div class="slip-row"><span class="k">Date</span><span>${fmtDate(p.date)}</span></div>
+      <div style="border-top:1.5px dashed var(--line);margin:10px 0;"></div>
+      ${itemRows}
+      <div class="slip-amount"><div class="n">${fmt(p.amount)}</div><div class="l">AMOUNT RECEIVED</div></div>
+      <div style="text-align:center;"><span class="slip-badge">PAID</span></div>
+      <div class="slip-foot">Receipt #${p.id.toUpperCase()}<br>Thank you</div>
+    `;
+  } else {
+    const p = DB.payouts.find(x=>x.id===recordId);
+    const t = DB.teachers.find(x=>x.id===p.teacherId);
+    const tt = teacherTotals(p.teacherId);
+    bodyHtml = `
+      <div class="slip-head">
+        <div class="aname">${escapeHtml(academyName)}</div>
+        ${academyContact?`<div class="contact">${escapeHtml(academyContact)}</div>`:''}
+        <div class="atype">TEACHER PAYMENT SLIP</div>
+      </div>
+      <div class="slip-row"><span class="k">Teacher</span><span>${escapeHtml(t?t.name:'—')}</span></div>
+      <div class="slip-row"><span class="k">Subject</span><span>${escapeHtml(t?(t.subject||''):'')}</span></div>
+      <div class="slip-row"><span class="k">Share</span><span>${t?t.sharePercent:'—'}%</span></div>
+      <div class="slip-row"><span class="k">Date</span><span>${fmtDate(p.date)}</span></div>
+      <div class="slip-amount"><div class="n">${fmt(p.amount)}</div><div class="l">AMOUNT PAID</div></div>
+      <div class="slip-row"><span class="k">Remaining due</span><span>${fmt(Math.max(tt.due,0))}</span></div>
+      <div style="text-align:center;"><span class="slip-badge">${tt.due<=0?'SETTLED':'PARTIAL'}</span></div>
+      <div class="slip-foot">Slip #${p.id.toUpperCase()}</div>
+    `;
+  }
+  openSheet('Slip preview', `
+    <div class="slip-wrap"><div id="slipCapture">${bodyHtml}</div></div>
+    <button class="btn gold" onclick="shareSlip()">Share as image</button>
+    <button class="btn ghost" style="margin-top:10px;" onclick="closeSheet()">Close</button>
+  `);
+}
+
+async function shareSlip(){
+  const node = document.getElementById('slipCapture');
+  if(!node || typeof html2canvas==='undefined'){ showToast('Could not render image'); return; }
+  showToast('Preparing image…');
+  try{
+    const canvas = await html2canvas(node, {backgroundColor:'#ffffff', scale:2});
+    canvas.toBlob(async (blob)=>{
+      if(!blob){ showToast('Could not create image'); return; }
+      const file = new File([blob], 'slip.png', {type:'image/png'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){
+        try{
+          await navigator.share({files:[file], title:'Payment slip'});
+          return;
+        }catch(e){ /* user cancelled or share failed, fall through to download */ }
+      }
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = 'slip.png';
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(()=>URL.revokeObjectURL(url), 2000);
+      showToast('Image saved — share it from your gallery');
+    }, 'image/png');
+  }catch(e){
+    console.error(e); showToast('Could not create image');
+  }
+}
+
+function escapeHtml(str){
+  if(str==null) return '';
+  return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+// ---------- nav wiring ----------
+document.querySelectorAll('nav.tabs button').forEach(b=>{
+  b.addEventListener('click', ()=>{ currentTab = b.dataset.tab; render(); });
+});
+
+// ---------- init ----------
+(async function init(){
+  await loadAll();
+  // first-run: ask academy name once
+  if(!DB._named){
+    // non-blocking: just use default, user can rename via students tab later if needed
+  }
+  render();
+})();
+</script>
+</body>
+</html>
