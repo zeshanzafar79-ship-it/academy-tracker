@@ -470,7 +470,8 @@ function openTeacherDetail(id){
     </div>
     <div class="section-label">Payout history</div>
     <div class="card">${rows}</div>
-    <button class="btn ghost" style="margin-top:6px;" onclick="openTeacherForm('${id}')">Edit teacher</button>
+    <button class="btn gold" style="margin-top:6px;" onclick="generateSlip('teacher_statement','${id}')">Generate statement</button>
+    <button class="btn ghost" style="margin-top:10px;" onclick="openTeacherForm('${id}')">Edit teacher</button>
     <button class="btn danger-ghost" style="margin-top:10px;" onclick="deleteTeacher('${id}')">Remove teacher</button>
   `);
 }
@@ -568,8 +569,7 @@ function openPaymentForm(){
     <label>Note (optional)</label><input id="p_note" placeholder="e.g. paid partial">
     <button class="btn" style="margin-top:16px;" onclick="savePayment()">Save & generate slip</button>
   `);
-  prefillFee();
-}
+  prefillFee();}
 // Splits a total amount across a student's subjects proportional to each subject's own
 // monthly fee (equal split if fees are all zero), then applies each subject's teacher %.
 function computeSplits(s, totalAmount){
@@ -720,8 +720,7 @@ function saveSettings(){
   save('settings'); closeSheet(); render();
   showToast('Saved');
 }
-
-// ---------- Sheet / modal ----------
+  // ---------- Sheet / modal ----------
 function openSheet(title, bodyHtml){
   document.getElementById('modalZone').innerHTML = `
     <div class="overlay" id="ov" onclick="if(event.target.id==='ov')closeSheet()">
@@ -734,6 +733,25 @@ function openSheet(title, bodyHtml){
 function closeSheet(){ document.getElementById('modalZone').innerHTML=''; }
 
 // ---------- Slip generation ----------
+// All of a teacher's (student, subject-entry) assignments across every student
+function teacherStudents(teacherId){
+  const list = [];
+  DB.students.forEach(s=>{
+    (s.subjects||[]).forEach(sub=>{
+      if(sub.teacherId===teacherId) list.push({student:s, sub});
+    });
+  });
+  return list;
+}
+// Has this student's fee for this specific subject been paid for the current month?
+function isSubjectPaidThisMonth(studentId, subjectEntryId){
+  const label = monthLabel(todayISO());
+  return DB.payments.some(p=>{
+    if(p.studentId!==studentId) return false;
+    if((p.month||'').trim()!==label) return false;
+    return paymentSplits(p).some(sp=>sp.subjectEntryId===subjectEntryId);
+  });
+}
 function generateSlip(type, recordId){
   let bodyHtml;
   const academyName = DB.settings.academyName || 'My Academy';
@@ -761,7 +779,7 @@ function generateSlip(type, recordId){
       <div style="text-align:center;"><span class="slip-badge">PAID</span></div>
       <div class="slip-foot">Receipt #${p.id.toUpperCase()}<br>Thank you</div>
     `;
-  } else {
+  } else if(type==='payout'){
     const p = DB.payouts.find(x=>x.id===recordId);
     const t = DB.teachers.find(x=>x.id===p.teacherId);
     const tt = teacherTotals(p.teacherId);
@@ -779,6 +797,44 @@ function generateSlip(type, recordId){
       <div class="slip-row"><span class="k">Remaining due</span><span>${fmt(Math.max(tt.due,0))}</span></div>
       <div style="text-align:center;"><span class="slip-badge">${tt.due<=0?'SETTLED':'PARTIAL'}</span></div>
       <div class="slip-foot">Slip #${p.id.toUpperCase()}</div>
+    `;
+  } else if(type==='teacher_statement'){
+    const t = DB.teachers.find(x=>x.id===recordId);
+    const tt = teacherTotals(recordId);
+    const assigned = teacherStudents(recordId);
+    const paidCount = assigned.filter(x=>isSubjectPaidThisMonth(x.student.id, x.sub.id)).length;
+    const pendingCount = assigned.length - paidCount;
+    const totalMonthlyFee = assigned.reduce((a,x)=>a+Number(x.sub.monthlyFee||0),0);
+    const totalCollected = DB.payments.reduce((a,p)=>
+      a + paymentSplits(p).filter(sp=>sp.teacherId===recordId).reduce((b,sp)=>b+Number(sp.amount),0), 0);
+    const academyCut = totalCollected - tt.earned;
+    const studentRows = assigned.map(x=>{
+      const paid = isSubjectPaidThisMonth(x.student.id, x.sub.id);
+      return `<div class="slip-row"><span class="k">${escapeHtml(x.student.name)}${x.student.className?' ('+escapeHtml(x.student.className)+')':''}</span>
+        <span style="color:${paid?'var(--success)':'var(--danger)'}">${fmt(x.sub.monthlyFee)} · ${paid?'Paid':'Pending'}</span></div>`;
+    }).join('') || `<div class="empty">No students assigned yet.</div>`;
+    bodyHtml = `
+      <div class="slip-head">
+        <div class="aname">${escapeHtml(academyName)}</div>
+        ${academyContact?`<div class="contact">${escapeHtml(academyContact)}</div>`:''}
+        <div class="atype">TEACHER STATEMENT</div>
+      </div>
+      <div class="slip-row"><span class="k">Teacher</span><span>${escapeHtml(t?t.name:'—')}</span></div>
+      <div class="slip-row"><span class="k">Subject</span><span>${escapeHtml(t?(t.subject||''):'')}</span></div>
+      <div class="slip-row"><span class="k">Share</span><span>${t?t.sharePercent:'—'}%</span></div>
+      <div class="slip-row"><span class="k">Month</span><span>${escapeHtml(monthLabel(todayISO()))}</span></div>
+      <div style="border-top:1.5px dashed var(--line);margin:10px 0;"></div>
+      <div class="slip-row"><span class="k">Students</span><span>${assigned.length} total · ${paidCount} paid · ${pendingCount} pending</span></div>
+      ${studentRows}
+      <div style="border-top:1.5px dashed var(--line);margin:10px 0;"></div>
+      <div class="slip-row"><span class="k">Monthly fee total (all students)</span><span>${fmt(totalMonthlyFee)}</span></div>
+      <div class="slip-row"><span class="k">Total collected (lifetime)</span><span>${fmt(totalCollected)}</span></div>
+      <div class="slip-row"><span class="k">Academy share</span><span>${fmt(academyCut)}</span></div>
+      <div class="slip-row"><span class="k">Teacher's share</span><span>${fmt(tt.earned)}</span></div>
+      <div class="slip-row"><span class="k">Already paid to teacher</span><span>${fmt(tt.paid)}</span></div>
+      <div class="slip-amount"><div class="n">${fmt(tt.due)}</div><div class="l">${t&&t.owner?'KEPT BY OWNER':'DUE NOW'}</div></div>
+      <div style="text-align:center;"><span class="slip-badge">${(t&&t.owner)||tt.due<=0?'SETTLED':'PENDING'}</span></div>
+      <div class="slip-foot">Statement generated ${fmtDate(todayISO())}</div>
     `;
   }
   openSheet('Slip preview', `
@@ -824,8 +880,7 @@ function escapeHtml(str){
 document.querySelectorAll('nav.tabs button').forEach(b=>{
   b.addEventListener('click', ()=>{ currentTab = b.dataset.tab; render(); });
 });
-
-// ---------- init ----------
+  // ---------- init ----------
 (async function init(){
   await loadAll();
   // first-run: ask academy name once
