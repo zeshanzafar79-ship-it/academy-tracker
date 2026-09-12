@@ -140,7 +140,7 @@
 
 <script>
 // ---------- storage helpers ----------
-const KEYS = ['students','teachers','payments','payouts','expenses','settings'];
+  const KEYS = ['students','teachers','payments','payouts','expenses','settings'];
 let DB = { students:[], teachers:[], payments:[], payouts:[], expenses:[],
   settings:{academyName:"STARS ACADEMY RYK", contact:"03406703615", defaultTeacherPercent:70} };
 
@@ -156,6 +156,35 @@ async function loadAll(){
     }catch(e){ console.error('load failed', k, e); }
   }
   migrateMultiSubject();
+  cleanupOrphans();
+}
+// Safety net for data saved before cascade-delete existed (or restored from an old
+// backup): strips any payment/payout that points at a student/teacher which no longer
+// exists, and clears any teacherId reference to a teacher that's gone. Runs every load;
+// it's a no-op (and does not re-save) once the data is already clean.
+function cleanupOrphans(){
+  let changed = false;
+  const studentIds = new Set(DB.students.map(s=>s.id));
+  const teacherIds = new Set(DB.teachers.map(t=>t.id));
+  const beforePayments = DB.payments.length;
+  DB.payments = DB.payments.filter(p=>studentIds.has(p.studentId));
+  if(DB.payments.length!==beforePayments) changed = true;
+  const beforePayouts = DB.payouts.length;
+  DB.payouts = DB.payouts.filter(p=>teacherIds.has(p.teacherId));
+  if(DB.payouts.length!==beforePayouts) changed = true;
+  DB.payments.forEach(p=>{
+    if(Array.isArray(p.splits)){
+      p.splits.forEach(sp=>{ if(sp.teacherId && !teacherIds.has(sp.teacherId)){ sp.teacherId=null; changed=true; } });
+    } else if(p.teacherId && !teacherIds.has(p.teacherId)){
+      p.teacherId = null; changed = true;
+    }
+  });
+  DB.students.forEach(s=>{
+    (s.subjects||[]).forEach(sub=>{
+      if(sub.teacherId && !teacherIds.has(sub.teacherId)){ sub.teacherId=null; changed=true; }
+    });
+  });
+  if(changed){ save('students'); save('payments'); save('payouts'); }
 }
 // One-time, idempotent upgrade: old students had a single subject/teacherId/monthlyFee.
 // New students have a `subjects` array so one student can take several subjects with
@@ -200,6 +229,8 @@ function importBackup(file){
     try{
       const data = JSON.parse(e.target.result);
       KEYS.forEach(k=>{ if(data[k]!=null){ DB[k]=data[k]; } });
+      migrateMultiSubject();
+      cleanupOrphans();
       for(const k of KEYS) await save(k);
       closeSheet(); render();
       showToast('Backup restored');
@@ -271,7 +302,7 @@ function fabBtn(label, onclick){
 }
 
 // ---------- Dashboard ----------
-function renderDashboard(){
+  function renderDashboard(){
   const totalFees = DB.payments.reduce((a,p)=>a+Number(p.amount),0);
   const academyShare = DB.payments.reduce((a,p)=>a+Number(p.academyShare),0);
   const teacherDue = DB.teachers.reduce((a,t)=>a+teacherTotals(t.id).due,0);
@@ -282,6 +313,8 @@ function renderDashboard(){
       .reduce((b,sp)=>b+Number(sp.amount),0);
     return a+physicsAmt;
   },0);
+  const pending = computePendingThisMonth();
+  const pendingTotal = pending.reduce((a,x)=>a+Number(x.sub.monthlyFee||0),0);
 
   const recent = [
     ...DB.payments.map(p=>({t:'fee', date:p.date, name:(DB.students.find(s=>s.id===p.studentId)||{}).name||'Student', amount:p.amount})),
@@ -296,6 +329,15 @@ function renderDashboard(){
       <div class="amt ${r.t==='fee'?'pos':'neg'}">${r.t==='fee'?'+':'−'}${fmt(r.amount)}</div>
     </div>`).join('') : `<div class="empty">No activity yet — start by collecting a fee.</div>`;
 
+  let pendingHtml = pending.length ? pending.map(x=>{
+    const t = DB.teachers.find(t=>t.id===x.sub.teacherId);
+    return `<div class="ledger-row" onclick="openPaymentForm('${x.student.id}')" style="cursor:pointer;">
+      <div><div class="who">${escapeHtml(x.student.name)}</div>
+        <div class="sub">${escapeHtml(x.sub.subject||'Subject')}${t?' · '+escapeHtml(t.name):''}</div></div>
+      <div class="amt neg">${fmt(x.sub.monthlyFee)}</div>
+    </div>`;
+  }).join('') : `<div class="empty">All caught up for ${escapeHtml(monthLabel(todayISO()))} 🎉</div>`;
+
   return `
     <div class="kpi-grid">
       <div class="kpi accent"><div class="num">${fmt(totalFees)}</div><div class="lbl">Total fees received</div></div>
@@ -303,7 +345,10 @@ function renderDashboard(){
       <div class="kpi"><div class="num" style="color:${teacherDue>0?'var(--danger)':'var(--success)'}">${fmt(teacherDue)}</div><div class="lbl">Owed to teachers</div></div>
       <div class="kpi"><div class="num">${fmt(net)}</div><div class="lbl">Net (after expenses)</div></div>
       <div class="kpi accent"><div class="num">${fmt(myTotal)}</div><div class="lbl">My total (Physics)</div></div>
+      <div class="kpi"><div class="num" style="color:${pending.length>0?'var(--danger)':'var(--success)'}">${fmt(pendingTotal)}</div><div class="lbl">Pending this month (${pending.length})</div></div>
     </div>
+    <div class="section-label">Pending fees — ${escapeHtml(monthLabel(todayISO()))}</div>
+    <div class="card">${pendingHtml}</div>
     <div class="section-label">Recent activity</div>
     <div class="card">${recentHtml}</div>
   `;
@@ -328,7 +373,7 @@ function renderStudents(){
 }
 function openStudentDetail(id){
   const s = DB.students.find(x=>x.id===id); if(!s) return;
-  const pays = DB.payments.filter(p=>p.studentId===id).sort((a,b)=>b.date.localeCompare(a.date));
+  const pays = DB.payments.filter(p=>p.studentId===id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const subjRows = (s.subjects||[]).map(sub=>{
     const t = DB.teachers.find(t=>t.id===sub.teacherId);
     return `<div class="ledger-row">
@@ -358,8 +403,11 @@ function openStudentDetail(id){
   `);
 }
 function deleteStudent(id){
+  const s = DB.students.find(x=>x.id===id);
+  if(!confirm(`Remove ${s?s.name:'this student'}? This also permanently deletes their entire fee payment history. This cannot be undone.`)) return;
   DB.students = DB.students.filter(s=>s.id!==id);
-  save('students'); closeSheet(); render();
+  DB.payments = DB.payments.filter(p=>p.studentId!==id); // remove their fee history too — they're gone
+  save('students'); save('payments'); closeSheet(); render();
   showToast('Student removed');
 }
 let editingSubjects = []; // working copy of the subjects list while the student form is open
@@ -388,7 +436,7 @@ function renderSubjectRows(){
     <div class="card" style="margin-bottom:8px;">
       <div class="row2">
         <div><label>Subject</label><input id="sub_subject_${i}" placeholder="e.g. Physics" value="${escapeHtml(row.subject||'')}"></div>
-        <div><label>Monthly fee (Rs)</label><input id="sub_fee_${i}" type="number" placeholder="5000" value="${row.monthlyFee||''}"></div>
+        <div><label>Monthly fee (Rs)</label><input id="sub_fee_${i}" type="number" min="0" placeholder="5000" value="${row.monthlyFee||''}"></div>
       </div>
       <label>Teacher</label><select id="sub_teacher_${i}"><option value="">Unassigned</option>${teacherOpts}</select>
       ${editingSubjects.length>1?`<button class="btn danger-ghost small" style="margin-top:8px;" onclick="removeSubjectRow(${i})">Remove this subject</button>`:''}
@@ -437,7 +485,7 @@ function saveStudent(id){
 }
 
 // ---------- Teachers ----------
-function renderTeachers(){
+  function renderTeachers(){
   if(!DB.teachers.length) return `<div class="empty">No teachers yet. Tap "+ Add teacher" to get started.</div>`;
   const rows = DB.teachers.map(t=>{
     const tt = teacherTotals(t.id);
@@ -453,7 +501,7 @@ function renderTeachers(){
 function openTeacherDetail(id){
   const t = DB.teachers.find(x=>x.id===id); if(!t) return;
   const tt = teacherTotals(id);
-  const payouts = DB.payouts.filter(p=>p.teacherId===id).sort((a,b)=>b.date.localeCompare(a.date));
+  const payouts = DB.payouts.filter(p=>p.teacherId===id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const rows = payouts.length ? payouts.map(p=>`
     <div class="ledger-row">
       <div><div class="who">${fmt(p.amount)}</div><div class="sub">${fmtDate(p.date)}${p.note?' · '+escapeHtml(p.note):''}</div></div>
@@ -476,8 +524,18 @@ function openTeacherDetail(id){
   `);
 }
 function deleteTeacher(id){
+  const t = DB.teachers.find(x=>x.id===id);
+  if(!confirm(`Remove ${t?t.name:'this teacher'}? This also permanently deletes their payout history. This cannot be undone.`)) return;
   DB.teachers = DB.teachers.filter(t=>t.id!==id);
-  save('teachers'); closeSheet(); render();
+  DB.payouts = DB.payouts.filter(p=>p.teacherId!==id); // their payout history is gone with them
+  // detach this teacher from any fee-payment splits (keeps the student's fee record, just un-attributes the teacher)
+  DB.payments.forEach(p=>{
+    if(Array.isArray(p.splits)) p.splits.forEach(sp=>{ if(sp.teacherId===id) sp.teacherId=null; });
+    else if(p.teacherId===id) p.teacherId=null;
+  });
+  // and from any student's subject assignment, so it shows "Unassigned" instead of a dangling reference
+  DB.students.forEach(s=>{ (s.subjects||[]).forEach(sub=>{ if(sub.teacherId===id) sub.teacherId=null; }); });
+  save('teachers'); save('payouts'); save('payments'); save('students'); closeSheet(); render();
   showToast('Teacher removed');
 }
 function openTeacherForm(id){
@@ -485,7 +543,7 @@ function openTeacherForm(id){
   openSheet(editing?'Edit teacher':'Add teacher', `
     <label>Teacher name</label><input id="f_tname" placeholder="e.g. Mr. Ahmed" value="${editing?escapeHtml(editing.name):''}">
     <label>Subject</label><input id="f_tsubject" placeholder="Physics" value="${editing?escapeHtml(editing.subject||''):''}">
-    <label>Teacher's share (%)</label><input id="f_tshare" type="number" value="${editing?editing.sharePercent:DB.settings.defaultTeacherPercent}">
+    <label>Teacher's share (%)</label><input id="f_tshare" type="number" min="0" max="100" value="${editing?editing.sharePercent:DB.settings.defaultTeacherPercent}">
     <label>Phone (optional)</label><input id="f_tphone" placeholder="03xx-xxxxxxx" value="${editing?escapeHtml(editing.phone||''):''}">
     <label style="display:flex;align-items:center;gap:8px;margin-top:16px;cursor:pointer;">
       <input type="checkbox" id="f_towner" style="width:auto;margin:0;" ${editing&&editing.owner?'checked':''}>
@@ -521,7 +579,7 @@ function renderMoney(){
     <button class="${moneySubtab==='payout'?'active':''}" onclick="setMoneySubtab('payout')">Teacher payouts</button>
   </div>`;
   if(moneySubtab==='collect'){
-    const list = [...DB.payments].sort((a,b)=>b.date.localeCompare(a.date));
+    const list = [...DB.payments].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
     html += list.length ? `<div class="card">${list.map(p=>{
       const s = DB.students.find(s=>s.id===p.studentId);
       const subjLabel = paymentSplits(p).map(sp=>sp.subjectName).filter(Boolean).join(', ');
@@ -535,7 +593,7 @@ function renderMoney(){
       </div>`;
     }).join('')}</div>` : `<div class="empty">No fee payments logged yet.</div>`;
   } else {
-    const list = [...DB.payouts].sort((a,b)=>b.date.localeCompare(a.date));
+    const list = [...DB.payouts].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
     html += list.length ? `<div class="card">${list.map(p=>{
       const t = DB.teachers.find(t=>t.id===p.teacherId);
       return `<div class="ledger-row">
@@ -552,24 +610,25 @@ function renderMoney(){
 }
 function setMoneySubtab(v){ moneySubtab=v; render(); }
 
-function openPaymentForm(){
+function openPaymentForm(presetStudentId){
   if(!DB.students.length){ showToast('Add a student first'); return; }
-  const opts = DB.students.map(s=>`<option value="${s.id}">${escapeHtml(s.name)} — ${escapeHtml(s.className||'')}</option>`).join('');
+  const opts = DB.students.map(s=>`<option value="${s.id}" ${presetStudentId===s.id?'selected':''}>${escapeHtml(s.name)} — ${escapeHtml(s.className||'')}</option>`).join('');
   openSheet('Collect fee', `
     <label>Student</label><select id="p_student" onchange="prefillFee()">${opts}</select>
     <div class="section-label" style="margin-top:14px;">This student's subjects</div>
     <div class="card" id="subjectBreakdown"></div>
     <div class="row2" style="margin-top:4px;">
-      <div><label>Amount received (Rs)</label><input id="p_amount" type="number" oninput="splitPreview()"></div>
+      <div><label>Amount received (Rs)</label><input id="p_amount" type="number" min="0" oninput="splitPreview()"></div>
       <div><label>Date</label><input id="p_date" type="date" value="${todayISO()}"></div>
     </div>
-    <label>Month this fee is for</label><input id="p_month" placeholder="e.g. Sep-2026">
+    <label>Month this fee is for</label><input id="p_month" placeholder="e.g. Sep 2026">
     <div class="section-label" style="margin-top:14px;">Goes to</div>
     <div class="card" id="splitPreview"></div>
     <label>Note (optional)</label><input id="p_note" placeholder="e.g. paid partial">
     <button class="btn" style="margin-top:16px;" onclick="savePayment()">Save & generate slip</button>
   `);
-  prefillFee();}
+  prefillFee();
+}
 // Splits a total amount across a student's subjects proportional to each subject's own
 // monthly fee (equal split if fees are all zero), then applies each subject's teacher %.
 function computeSplits(s, totalAmount){
@@ -644,7 +703,7 @@ function openPayoutForm(){
   openSheet('Pay teacher', `
     <label>Teacher</label><select id="o_teacher">${opts}</select>
     <div class="row2">
-      <div><label>Amount paid (Rs)</label><input id="o_amount" type="number"></div>
+      <div><label>Amount paid (Rs)</label><input id="o_amount" type="number" min="0"></div>
       <div><label>Date</label><input id="o_date" type="date" value="${todayISO()}"></div>
     </div>
     <label>Note (optional)</label><input id="o_note" placeholder="e.g. Sep salary share">
@@ -664,21 +723,30 @@ function savePayout(){
 }
 
 // ---------- Expenses ----------
-function renderExpenses(){
+  function renderExpenses(){
   if(!DB.expenses.length) return `<div class="empty">No expenses logged yet.</div>`;
-  const list = [...DB.expenses].sort((a,b)=>b.date.localeCompare(a.date));
+  const list = [...DB.expenses].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const rows = list.map(e=>`
     <div class="ledger-row">
       <div><div class="who">${escapeHtml(e.title)}</div><div class="sub">${escapeHtml(e.category||'')} · ${fmtDate(e.date)}</div></div>
-      <div class="amt neg">${fmt(e.amount)}</div>
+      <div style="text-align:right;">
+        <div class="amt neg">${fmt(e.amount)}</div>
+        <button class="btn danger-ghost small" style="margin-top:5px;" onclick="deleteExpense('${e.id}')">Remove</button>
+      </div>
     </div>`).join('');
   return `<div class="card">${rows}</div>`;
+}
+function deleteExpense(id){
+  if(!confirm('Remove this expense? This cannot be undone.')) return;
+  DB.expenses = DB.expenses.filter(e=>e.id!==id);
+  save('expenses'); render();
+  showToast('Expense removed');
 }
 function openExpenseForm(){
   openSheet('Add expense', `
     <label>What was it for</label><input id="e_title" placeholder="e.g. Electricity bill">
     <div class="row2">
-      <div><label>Amount (Rs)</label><input id="e_amount" type="number"></div>
+      <div><label>Amount (Rs)</label><input id="e_amount" type="number" min="0"></div>
       <div><label>Date</label><input id="e_date" type="date" value="${todayISO()}"></div>
     </div>
     <label>Category</label>
@@ -705,7 +773,7 @@ function openSettingsForm(){
   openSheet('Academy info', `
     <label>Academy name</label><input id="s_name" value="${escapeHtml(DB.settings.academyName||'')}">
     <label>Contact number</label><input id="s_contact" value="${escapeHtml(DB.settings.contact||'')}" placeholder="03xx-xxxxxxx">
-    <label>Default teacher share (%)</label><input id="s_pct" type="number" value="${DB.settings.defaultTeacherPercent}">
+    <label>Default teacher share (%)</label><input id="s_pct" type="number" min="0" max="100" value="${DB.settings.defaultTeacherPercent}">
     <button class="btn" style="margin-top:16px;" onclick="saveSettings()">Save</button>
     <div class="section-label" style="margin-top:20px;">Backup</div>
     <button class="btn ghost" onclick="exportBackup()">Download backup file</button>
@@ -720,7 +788,8 @@ function saveSettings(){
   save('settings'); closeSheet(); render();
   showToast('Saved');
 }
-  // ---------- Sheet / modal ----------
+
+// ---------- Sheet / modal ----------
 function openSheet(title, bodyHtml){
   document.getElementById('modalZone').innerHTML = `
     <div class="overlay" id="ov" onclick="if(event.target.id==='ov')closeSheet()">
@@ -744,13 +813,27 @@ function teacherStudents(teacherId){
   return list;
 }
 // Has this student's fee for this specific subject been paid for the current month?
+// Matching is normalized (case/space/hyphen-insensitive) since the month field is free text.
+function normalizeMonth(str){ return String(str||'').toLowerCase().replace(/[\s-]/g,''); }
 function isSubjectPaidThisMonth(studentId, subjectEntryId){
-  const label = monthLabel(todayISO());
+  const label = normalizeMonth(monthLabel(todayISO()));
   return DB.payments.some(p=>{
     if(p.studentId!==studentId) return false;
-    if((p.month||'').trim()!==label) return false;
+    if(normalizeMonth(p.month)!==label) return false;
     return paymentSplits(p).some(sp=>sp.subjectEntryId===subjectEntryId);
   });
+}
+// Every (student, subject) not yet paid for the current month — this is what "start of
+// a new month" actually means for this app: nothing to re-add, this list just repopulates
+// itself automatically once the calendar rolls over, since it's computed live every time.
+function computePendingThisMonth(){
+  const list = [];
+  DB.students.forEach(s=>{
+    (s.subjects||[]).forEach(sub=>{
+      if(!isSubjectPaidThisMonth(s.id, sub.id)) list.push({student:s, sub});
+    });
+  });
+  return list;
 }
 function generateSlip(type, recordId){
   let bodyHtml;
@@ -880,7 +963,8 @@ function escapeHtml(str){
 document.querySelectorAll('nav.tabs button').forEach(b=>{
   b.addEventListener('click', ()=>{ currentTab = b.dataset.tab; render(); });
 });
-  // ---------- init ----------
+
+// ---------- init ----------
 (async function init(){
   await loadAll();
   // first-run: ask academy name once
