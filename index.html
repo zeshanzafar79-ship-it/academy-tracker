@@ -22,6 +22,19 @@
     --success-bg:#E9F1EB;
   }
   *{box-sizing:border-box;}
+  /* ---- Color themes: pick via html[data-theme]. Semantic colors (success/danger) stay
+     constant across themes since they carry meaning, not brand identity. ---- */
+  html[data-theme="navy"]{ --bg:#EEF1F5; --paper:#FFFFFF; --ink:#1B2635; --muted:#5F6B7A; --line:#D7DEE6;
+    --primary:#16324F; --primary-ink:#F1F5F9; --accent:#D98E3A; --accent-ink:#2A1B06; }
+  html[data-theme="maroon"]{ --bg:#F5EFEA; --paper:#FFFFFF; --ink:#2B1B1B; --muted:#7A6A63; --line:#E3D6CC;
+    --primary:#5C2430; --primary-ink:#F7EFE9; --accent:#C9A15A; --accent-ink:#2A1D06; }
+  html[data-theme="teal"]{ --bg:#EAF2F1; --paper:#FFFFFF; --ink:#1B2E2C; --muted:#5C726E; --line:#D2E3E0;
+    --primary:#0F4C4C; --primary-ink:#EAF6F4; --accent:#E0784F; --accent-ink:#2A1206; }
+  html[data-theme="charcoal"]{ --bg:#F0EEEE; --paper:#FFFFFF; --ink:#221F1F; --muted:#71696A; --line:#DCD8D8;
+    --primary:#2B2B2B; --primary-ink:#F5F3F3; --accent:#B5495B; --accent-ink:#FFFFFF; }
+  /* ---- Fonts: pick via html[data-font]. All system-safe, no network fetch required. ---- */
+  html[data-font="serif"] body{font-family:Georgia,'Times New Roman',Times,serif;}
+  html[data-font="rounded"] body{font-family:'Trebuchet MS',Verdana,'Segoe UI',sans-serif;}
   body{margin:0;background:var(--bg);color:var(--ink);
     font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}
   #app{max-width:480px;margin:0 auto;min-height:100vh;background:var(--bg);
@@ -142,7 +155,8 @@
 // ---------- storage helpers ----------
   const KEYS = ['students','teachers','payments','payouts','expenses','settings'];
 let DB = { students:[], teachers:[], payments:[], payouts:[], expenses:[],
-  settings:{academyName:"STARS ACADEMY RYK", contact:"03406703615", defaultTeacherPercent:70} };
+  settings:{academyName:"STARS ACADEMY RYK", contact:"03406703615", defaultTeacherPercent:70,
+    ownerName:"", theme:"forest", font:"sans"} };
 
 // Uses localStorage so data survives refresh / closing the browser — this file
 // runs standalone on the phone, not inside a Claude artifact, so window.storage
@@ -265,6 +279,16 @@ function paymentSplits(p){
   return [{ subjectEntryId: p.subjectEntryId||null, subjectName: p.subjectName||'',
     teacherId: p.teacherId||null, amount: p.amount, academyShare: p.academyShare, teacherShare: p.teacherShare }];
 }
+// A teacher is treated as the academy owner if their name matches the Owner name set in
+// Settings (case/space-insensitive), or if they were flagged owner:true by the older
+// per-teacher checkbox (kept for backward compatibility with existing data).
+function isOwner(t){
+  if(!t) return false;
+  if(t.owner) return true;
+  const on = (DB.settings.ownerName||'').trim().toLowerCase();
+  if(!on) return false;
+  return (t.name||'').trim().toLowerCase() === on;
+}
 function teacherTotals(teacherId){
   const earned = DB.payments.reduce((a,p)=>{
     const owed = paymentSplits(p).filter(sp=>sp.teacherId===teacherId)
@@ -273,7 +297,7 @@ function teacherTotals(teacherId){
   },0);
   const paid = DB.payouts.filter(p=>p.teacherId===teacherId).reduce((a,p)=>a+Number(p.amount),0);
   const t = DB.teachers.find(x=>x.id===teacherId);
-  const due = (t && t.owner) ? 0 : (earned-paid); // owner's share is already theirs — never "due"
+  const due = isOwner(t) ? 0 : (earned-paid); // owner's share is already theirs — never "due"
   return {earned, paid, due};
 }
 function studentPaidTotal(studentId){
@@ -281,7 +305,7 @@ function studentPaidTotal(studentId){
 }
 
 // ---------- render router ----------
-function render(){
+  function render(){
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===currentTab));
   const titles = {dashboard:'Dashboard', students:'Students', teachers:'Teachers', money:'Fees & Payouts', expenses:'Expenses'};
   document.getElementById('pageTitle').textContent = titles[currentTab];
@@ -302,17 +326,13 @@ function fabBtn(label, onclick){
 }
 
 // ---------- Dashboard ----------
-  function renderDashboard(){
+function renderDashboard(){
   const totalFees = DB.payments.reduce((a,p)=>a+Number(p.amount),0);
   const academyShare = DB.payments.reduce((a,p)=>a+Number(p.academyShare),0);
   const teacherDue = DB.teachers.reduce((a,t)=>a+teacherTotals(t.id).due,0);
   const totalExpenses = DB.expenses.reduce((a,e)=>a+Number(e.amount),0);
   const net = academyShare - totalExpenses;
-  const myTotal = DB.payments.reduce((a,p)=>{
-    const physicsAmt = paymentSplits(p).filter(sp=>(sp.subjectName||'').trim().toLowerCase()==='physics')
-      .reduce((b,sp)=>b+Number(sp.amount),0);
-    return a+physicsAmt;
-  },0);
+  const myTotal = DB.teachers.filter(isOwner).reduce((a,t)=>a+teacherTotals(t.id).earned,0);
   const pending = computePendingThisMonth();
   const pendingTotal = pending.reduce((a,x)=>a+Number(x.sub.monthlyFee||0),0);
 
@@ -344,7 +364,7 @@ function fabBtn(label, onclick){
       <div class="kpi"><div class="num">${fmt(academyShare)}</div><div class="lbl">Academy share</div></div>
       <div class="kpi"><div class="num" style="color:${teacherDue>0?'var(--danger)':'var(--success)'}">${fmt(teacherDue)}</div><div class="lbl">Owed to teachers</div></div>
       <div class="kpi"><div class="num">${fmt(net)}</div><div class="lbl">Net (after expenses)</div></div>
-      <div class="kpi accent"><div class="num">${fmt(myTotal)}</div><div class="lbl">My total (Physics)</div></div>
+      <div class="kpi accent"><div class="num">${fmt(myTotal)}</div><div class="lbl">Your teaching income</div></div>
       <div class="kpi"><div class="num" style="color:${pending.length>0?'var(--danger)':'var(--success)'}">${fmt(pendingTotal)}</div><div class="lbl">Pending this month (${pending.length})</div></div>
     </div>
     <div class="section-label">Pending fees — ${escapeHtml(monthLabel(todayISO()))}</div>
@@ -490,9 +510,9 @@ function saveStudent(id){
   const rows = DB.teachers.map(t=>{
     const tt = teacherTotals(t.id);
     return `<div class="ledger-row" onclick="openTeacherDetail('${t.id}')" style="cursor:pointer;">
-      <div><div class="who">${escapeHtml(t.name)}${t.owner?' <span style="font-size:10px;color:var(--accent);font-weight:700;">(YOU)</span>':''}</div>
+      <div><div class="who">${escapeHtml(t.name)}${isOwner(t)?' <span style="font-size:10px;color:var(--accent);font-weight:700;">(YOU)</span>':''}</div>
         <div class="sub">${escapeHtml(t.subject||'—')} · ${t.sharePercent}% share</div>
-        <span class="tag ${tt.due>0?'due':'clear'}">${tt.due>0? fmt(tt.due)+' due' : (t.owner?'Kept by you':'Settled')}</span></div>
+        <span class="tag ${tt.due>0?'due':'clear'}">${tt.due>0? fmt(tt.due)+' due' : (isOwner(t)?'Kept by you':'Settled')}</span></div>
       <div class="amt pos">${fmt(tt.earned)}</div>
     </div>`;
   }).join('');
@@ -514,7 +534,7 @@ function openTeacherDetail(id){
       <div class="ledger-row"><div class="sub">Earned total</div><div class="who">${fmt(tt.earned)}</div></div>
       <div class="ledger-row"><div class="sub">Paid so far</div><div class="who">${fmt(tt.paid)}</div></div>
       <div class="ledger-row"><div class="sub">Due now</div><div class="who" style="color:${tt.due>0?'var(--danger)':'var(--success)'}">${fmt(tt.due)}</div></div>
-      ${t.owner?`<div class="empty" style="padding:10px 2px;text-align:left;">This is you — your share is kept automatically, no payout needed.</div>`:''}
+      ${isOwner(t)?`<div class="empty" style="padding:10px 2px;text-align:left;">This is you — your share is kept automatically, no payout needed.</div>`:''}
     </div>
     <div class="section-label">Payout history</div>
     <div class="card">${rows}</div>
@@ -545,10 +565,7 @@ function openTeacherForm(id){
     <label>Subject</label><input id="f_tsubject" placeholder="Physics" value="${editing?escapeHtml(editing.subject||''):''}">
     <label>Teacher's share (%)</label><input id="f_tshare" type="number" min="0" max="100" value="${editing?editing.sharePercent:DB.settings.defaultTeacherPercent}">
     <label>Phone (optional)</label><input id="f_tphone" placeholder="03xx-xxxxxxx" value="${editing?escapeHtml(editing.phone||''):''}">
-    <label style="display:flex;align-items:center;gap:8px;margin-top:16px;cursor:pointer;">
-      <input type="checkbox" id="f_towner" style="width:auto;margin:0;" ${editing&&editing.owner?'checked':''}>
-      <span style="font-size:13px;color:var(--ink);font-weight:600;">This is me (academy owner) — my share is never "due"</span>
-    </label>
+    <div style="font-size:12px;color:var(--muted);margin-top:6px;">Tip: if this is you (the academy owner), just make sure this name matches the "Owner name" set in Settings — it'll be handled automatically, no checkbox needed.</div>
     <button class="btn" style="margin-top:16px;" onclick="saveTeacher(${editing?`'${id}'`:'null'})">${editing?'Save changes':'Save teacher'}</button>
   `);
 }
@@ -559,8 +576,7 @@ function saveTeacher(id){
     name,
     subject: document.getElementById('f_tsubject').value.trim(),
     sharePercent: Number(document.getElementById('f_tshare').value)||DB.settings.defaultTeacherPercent,
-    phone: document.getElementById('f_tphone').value.trim(),
-    owner: document.getElementById('f_towner').checked
+    phone: document.getElementById('f_tphone').value.trim()
   };
   if(id){
     const idx = DB.teachers.findIndex(t=>t.id===id);
@@ -769,28 +785,116 @@ function saveExpense(){
 }
 
 // ---------- Settings ----------
+const THEMES = [
+  {id:'forest', label:'Forest & Gold', primary:'#1B4332', accent:'#C08A2E'},
+  {id:'navy', label:'Navy & Amber', primary:'#16324F', accent:'#D98E3A'},
+  {id:'maroon', label:'Maroon & Cream', primary:'#5C2430', accent:'#C9A15A'},
+  {id:'teal', label:'Teal & Coral', primary:'#0F4C4C', accent:'#E0784F'},
+  {id:'charcoal', label:'Charcoal & Rose', primary:'#2B2B2B', accent:'#B5495B'},
+];
+const FONTS = [
+  {id:'sans', label:'Modern'},
+  {id:'serif', label:'Elegant'},
+  {id:'rounded', label:'Rounded'},
+];
+let pendingTheme = 'forest';
+let pendingFont = 'sans';
+function renderThemeSwatches(){
+  return THEMES.map(th=>`
+    <button onclick="pickTheme('${th.id}')" title="${th.label}"
+      style="width:44px;height:44px;border-radius:50%;padding:0;cursor:pointer;
+      border:${pendingTheme===th.id?'3px solid var(--ink)':'1.5px solid var(--line)'};
+      background:linear-gradient(135deg, ${th.primary} 50%, ${th.accent} 50%);"></button>
+  `).join('');
+}
+function renderFontOptions(){
+  return FONTS.map(f=>`
+    <button onclick="pickFont('${f.id}')" class="btn ${pendingFont===f.id?'':'ghost'} small" style="flex:1;">${f.label}</button>
+  `).join('');
+}
+function pickTheme(id){ pendingTheme=id; document.getElementById('themeSwatches').innerHTML = renderThemeSwatches(); }
+function pickFont(id){ pendingFont=id; document.getElementById('fontOptions').innerHTML = renderFontOptions(); }
 function openSettingsForm(){
+  pendingTheme = DB.settings.theme || 'forest';
+  pendingFont = DB.settings.font || 'sans';
+  const fresh = !DB.students.length && !DB.teachers.length;
   openSheet('Academy info', `
     <label>Academy name</label><input id="s_name" value="${escapeHtml(DB.settings.academyName||'')}">
     <label>Contact number</label><input id="s_contact" value="${escapeHtml(DB.settings.contact||'')}" placeholder="03xx-xxxxxxx">
     <label>Default teacher share (%)</label><input id="s_pct" type="number" min="0" max="100" value="${DB.settings.defaultTeacherPercent}">
+    <label style="margin-top:14px;">Owner name</label>
+    <input id="s_owner" value="${escapeHtml(DB.settings.ownerName||'')}" placeholder="e.g. Zeshan">
+    <div style="font-size:12px;color:var(--muted);margin-top:4px;">If a teacher's name matches this, their share is automatically kept by you — no per-teacher setup needed. Leave blank if you don't personally teach.</div>
+
+    <div class="section-label" style="margin-top:20px;">Appearance</div>
+    <label>Color theme</label>
+    <div id="themeSwatches" style="display:flex;gap:10px;flex-wrap:wrap;margin:6px 0 14px;">${renderThemeSwatches()}</div>
+    <label>Font style</label>
+    <div id="fontOptions" style="display:flex;gap:8px;margin:6px 0 4px;">${renderFontOptions()}</div>
+
     <button class="btn" style="margin-top:16px;" onclick="saveSettings()">Save</button>
+
     <div class="section-label" style="margin-top:20px;">Backup</div>
     <button class="btn ghost" onclick="exportBackup()">Download backup file</button>
     <label style="margin-top:14px;">Restore from backup file</label>
     <input id="s_restore" type="file" accept="application/json" onchange="if(this.files[0]) importBackup(this.files[0])">
+
+    <div class="section-label" style="margin-top:20px;">Data</div>
+    ${fresh
+      ? `<button class="btn ghost" onclick="loadSampleData()">Load sample data</button>
+         <div style="font-size:12px;color:var(--muted);margin-top:4px;">Adds example students, teachers, and fees so you can explore the app.</div>`
+      : `<div style="font-size:12px;color:var(--muted);">Sample data is only available on a fresh, empty setup — clear existing data first if you want to try it.</div>`}
+    <button class="btn danger-ghost" style="margin-top:14px;" onclick="clearAllData()">Clear all data</button>
+    <div style="font-size:12px;color:var(--muted);margin-top:4px;">Permanently deletes every student, teacher, payment, payout, and expense. Academy name and settings are kept.</div>
   `);
 }
 function saveSettings(){
   DB.settings.academyName = document.getElementById('s_name').value.trim() || 'My Academy';
   DB.settings.contact = document.getElementById('s_contact').value.trim();
   DB.settings.defaultTeacherPercent = Number(document.getElementById('s_pct').value)||70;
-  save('settings'); closeSheet(); render();
+  DB.settings.ownerName = document.getElementById('s_owner').value.trim();
+  DB.settings.theme = pendingTheme;
+  DB.settings.font = pendingFont;
+  save('settings');
+  applyAppearance();
+  closeSheet(); render();
   showToast('Saved');
+}
+function applyAppearance(){
+  document.documentElement.setAttribute('data-theme', DB.settings.theme||'forest');
+  document.documentElement.setAttribute('data-font', DB.settings.font||'sans');
+}
+function loadSampleData(){
+  if(DB.students.length || DB.teachers.length){ showToast('Clear existing data first'); return; }
+  if(!confirm('Load sample data? This adds example students, teachers, and a payment so you can explore the app.')) return;
+  const t1 = uid(), t2 = uid();
+  DB.teachers = [
+    {id:t1, name:'Demo Teacher A', subject:'Physics', sharePercent:70, phone:''},
+    {id:t2, name:'Demo Teacher B', subject:'English', sharePercent:60, phone:''},
+  ];
+  const sub1 = uid(), sub2 = uid(), s1 = uid();
+  DB.students = [
+    {id:s1, name:'Demo Student', className:'Class 10', phone:'', subjects:[
+      {id:sub1, subject:'Physics', teacherId:t1, monthlyFee:3000},
+      {id:sub2, subject:'English', teacherId:t2, monthlyFee:2000},
+    ]},
+  ];
+  DB.payments = []; DB.payouts = []; DB.expenses = [];
+  save('teachers'); save('students'); save('payments'); save('payouts'); save('expenses');
+  closeSheet(); render();
+  showToast('Sample data loaded');
+}
+function clearAllData(){
+  if(!confirm('Clear ALL data — every student, teacher, payment, payout, and expense? This cannot be undone.')) return;
+  if(!confirm('Final check: this permanently deletes everything listed above. Continue?')) return;
+  DB.students=[]; DB.teachers=[]; DB.payments=[]; DB.payouts=[]; DB.expenses=[];
+  save('students'); save('teachers'); save('payments'); save('payouts'); save('expenses');
+  closeSheet(); render();
+  showToast('All data cleared');
 }
 
 // ---------- Sheet / modal ----------
-function openSheet(title, bodyHtml){
+  function openSheet(title, bodyHtml){
   document.getElementById('modalZone').innerHTML = `
     <div class="overlay" id="ov" onclick="if(event.target.id==='ov')closeSheet()">
       <div class="sheet">
@@ -915,8 +1019,8 @@ function generateSlip(type, recordId){
       <div class="slip-row"><span class="k">Academy share</span><span>${fmt(academyCut)}</span></div>
       <div class="slip-row"><span class="k">Teacher's share</span><span>${fmt(tt.earned)}</span></div>
       <div class="slip-row"><span class="k">Already paid to teacher</span><span>${fmt(tt.paid)}</span></div>
-      <div class="slip-amount"><div class="n">${fmt(tt.due)}</div><div class="l">${t&&t.owner?'KEPT BY OWNER':'DUE NOW'}</div></div>
-      <div style="text-align:center;"><span class="slip-badge">${(t&&t.owner)||tt.due<=0?'SETTLED':'PENDING'}</span></div>
+      <div class="slip-amount"><div class="n">${fmt(tt.due)}</div><div class="l">${t&&isOwner(t)?'KEPT BY OWNER':'DUE NOW'}</div></div>
+      <div style="text-align:center;"><span class="slip-badge">${(t&&isOwner(t))||tt.due<=0?'SETTLED':'PENDING'}</span></div>
       <div class="slip-foot">Statement generated ${fmtDate(todayISO())}</div>
     `;
   }
@@ -967,10 +1071,7 @@ document.querySelectorAll('nav.tabs button').forEach(b=>{
 // ---------- init ----------
 (async function init(){
   await loadAll();
-  // first-run: ask academy name once
-  if(!DB._named){
-    // non-blocking: just use default, user can rename via students tab later if needed
-  }
+  applyAppearance();
   render();
 })();
 </script>
