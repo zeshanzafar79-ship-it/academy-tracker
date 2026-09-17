@@ -153,7 +153,7 @@
 
 <script>
 // ---------- storage helpers ----------
-  const KEYS = ['students','teachers','payments','payouts','expenses','settings'];
+const KEYS = ['students','teachers','payments','payouts','expenses','settings'];
 let DB = { students:[], teachers:[], payments:[], payouts:[], expenses:[],
   settings:{academyName:"STARS ACADEMY RYK", contact:"03406703615", defaultTeacherPercent:70,
     ownerName:"", theme:"forest", font:"sans"} };
@@ -170,6 +170,7 @@ async function loadAll(){
     }catch(e){ console.error('load failed', k, e); }
   }
   migrateMultiSubject();
+  migrateEnrolledMonth();
   cleanupOrphans();
 }
 // Safety net for data saved before cascade-delete existed (or restored from an old
@@ -208,7 +209,7 @@ function migrateMultiSubject(){
   let changed = false;
   DB.students.forEach(s=>{
     if(!s.subjects){
-      const subj = { id: uid(), subject: s.subject||'', teacherId: s.teacherId||null, monthlyFee: s.monthlyFee||0 };
+      const subj = { id: uid(), subject: s.subject||'', teacherId: s.teacherId||null, monthlyFee: s.monthlyFee||0, enrolledMonth: ymNow() };
       DB.payments.forEach(p=>{
         if(p.studentId===s.id && !p.subjectEntryId){
           p.subjectEntryId = subj.id;
@@ -222,6 +223,17 @@ function migrateMultiSubject(){
     }
   });
   if(changed){ save('students'); save('payments'); }
+}
+// Any subject saved before carryover-balance tracking existed gets anchored to the
+// CURRENT month, never backdated — so upgrading never invents a false historical debt.
+function migrateEnrolledMonth(){
+  let changed = false;
+  DB.students.forEach(s=>{
+    (s.subjects||[]).forEach(sub=>{
+      if(!sub.enrolledMonth){ sub.enrolledMonth = ymNow(); changed = true; }
+    });
+  });
+  if(changed) save('students');
 }
 async function save(key){
   try{ localStorage.setItem(LS_PREFIX+key, JSON.stringify(DB[key])); }
@@ -244,6 +256,7 @@ function importBackup(file){
       const data = JSON.parse(e.target.result);
       KEYS.forEach(k=>{ if(data[k]!=null){ DB[k]=data[k]; } });
       migrateMultiSubject();
+      migrateEnrolledMonth();
       cleanupOrphans();
       for(const k of KEYS) await save(k);
       closeSheet(); render();
@@ -257,9 +270,28 @@ function fmt(n){ n = Number(n)||0; return 'Rs ' + n.toLocaleString('en-PK',{maxi
 function todayISO(){ return new Date().toISOString().slice(0,10); }
 function fmtDate(iso){ if(!iso) return ''; const d=new Date(iso); return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
 function monthLabel(iso){ const d=new Date(iso); return d.toLocaleDateString('en-US',{month:'short',year:'numeric'}); }
+// ---------- Monthly billing / carryover balance ----------
+// A subject's fee accrues once per calendar month starting the month it was added
+// (`enrolledMonth`, stored as "YYYY-MM"). Outstanding balance = (months elapsed × monthly
+// fee) − (total ever paid toward that subject). A full payment brings it to 0; once the
+// next month starts, that month's fee accrues again automatically — no re-adding anything.
+// A partial payment leaves a real remainder that keeps adding up until it's paid off.
+function ymNow(){ const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0'); }
+function ymToNum(ym){ const parts=String(ym||'').split('-'); const y=Number(parts[0])||0, m=Number(parts[1])||1; return y*12+m; }
+function monthsElapsed(enrolledYM){ return Math.max(1, ymToNum(ymNow()) - ymToNum(enrolledYM||ymNow()) + 1); }
+function subjectTotalPaid(subjectEntryId){
+  return DB.payments.reduce((a,p)=>
+    a + paymentSplits(p).filter(sp=>sp.subjectEntryId===subjectEntryId).reduce((b,sp)=>b+Number(sp.amount),0), 0);
+}
+function subjectOutstanding(sub){
+  const months = monthsElapsed(sub.enrolledMonth);
+  const accrued = months * Number(sub.monthlyFee||0);
+  const paid = subjectTotalPaid(sub.id);
+  return Math.max(0, accrued - paid);
+}
 
 // ---------- app state ----------
-let currentTab = 'dashboard';
+  let currentTab = 'dashboard';
 let moneySubtab = 'collect';
 
 function showToast(msg){
@@ -305,7 +337,7 @@ function studentPaidTotal(studentId){
 }
 
 // ---------- render router ----------
-  function render(){
+function render(){
   document.querySelectorAll('nav.tabs button').forEach(b=>b.classList.toggle('active', b.dataset.tab===currentTab));
   const titles = {dashboard:'Dashboard', students:'Students', teachers:'Teachers', money:'Fees & Payouts', expenses:'Expenses'};
   document.getElementById('pageTitle').textContent = titles[currentTab];
@@ -333,8 +365,8 @@ function renderDashboard(){
   const totalExpenses = DB.expenses.reduce((a,e)=>a+Number(e.amount),0);
   const net = academyShare - totalExpenses;
   const myTotal = DB.teachers.filter(isOwner).reduce((a,t)=>a+teacherTotals(t.id).earned,0);
-  const pending = computePendingThisMonth();
-  const pendingTotal = pending.reduce((a,x)=>a+Number(x.sub.monthlyFee||0),0);
+  const pending = computeOutstandingBalances();
+  const pendingTotal = pending.reduce((a,x)=>a+x.balance,0);
 
   const recent = [
     ...DB.payments.map(p=>({t:'fee', date:p.date, name:(DB.students.find(s=>s.id===p.studentId)||{}).name||'Student', amount:p.amount})),
@@ -351,12 +383,13 @@ function renderDashboard(){
 
   let pendingHtml = pending.length ? pending.map(x=>{
     const t = DB.teachers.find(t=>t.id===x.sub.teacherId);
+    const carried = Math.max(0, x.balance - Number(x.sub.monthlyFee||0));
     return `<div class="ledger-row" onclick="openPaymentForm('${x.student.id}')" style="cursor:pointer;">
       <div><div class="who">${escapeHtml(x.student.name)}</div>
-        <div class="sub">${escapeHtml(x.sub.subject||'Subject')}${t?' · '+escapeHtml(t.name):''}</div></div>
-      <div class="amt neg">${fmt(x.sub.monthlyFee)}</div>
+        <div class="sub">${escapeHtml(x.sub.subject||'Subject')}${t?' · '+escapeHtml(t.name):''}${carried>0?' · includes '+fmt(carried)+' carried over':''}</div></div>
+      <div class="amt neg">${fmt(x.balance)}</div>
     </div>`;
-  }).join('') : `<div class="empty">All caught up for ${escapeHtml(monthLabel(todayISO()))} 🎉</div>`;
+  }).join('') : `<div class="empty">Everyone's paid up! 🎉</div>`;
 
   return `
     <div class="kpi-grid">
@@ -365,9 +398,9 @@ function renderDashboard(){
       <div class="kpi"><div class="num" style="color:${teacherDue>0?'var(--danger)':'var(--success)'}">${fmt(teacherDue)}</div><div class="lbl">Owed to teachers</div></div>
       <div class="kpi"><div class="num">${fmt(net)}</div><div class="lbl">Net (after expenses)</div></div>
       <div class="kpi accent"><div class="num">${fmt(myTotal)}</div><div class="lbl">Your teaching income</div></div>
-      <div class="kpi"><div class="num" style="color:${pending.length>0?'var(--danger)':'var(--success)'}">${fmt(pendingTotal)}</div><div class="lbl">Pending this month (${pending.length})</div></div>
+      <div class="kpi"><div class="num" style="color:${pending.length>0?'var(--danger)':'var(--success)'}">${fmt(pendingTotal)}</div><div class="lbl">Outstanding fees (${pending.length})</div></div>
     </div>
-    <div class="section-label">Pending fees — ${escapeHtml(monthLabel(todayISO()))}</div>
+    <div class="section-label">Outstanding fees</div>
     <div class="card">${pendingHtml}</div>
     <div class="section-label">Recent activity</div>
     <div class="card">${recentHtml}</div>
@@ -396,9 +429,10 @@ function openStudentDetail(id){
   const pays = DB.payments.filter(p=>p.studentId===id).sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const subjRows = (s.subjects||[]).map(sub=>{
     const t = DB.teachers.find(t=>t.id===sub.teacherId);
+    const bal = subjectOutstanding(sub);
     return `<div class="ledger-row">
-      <div><div class="who">${escapeHtml(sub.subject||'Subject')}</div><div class="sub">${t?escapeHtml(t.name):'Unassigned teacher'}</div></div>
-      <div class="amt pos">${fmt(sub.monthlyFee)}</div>
+      <div><div class="who">${escapeHtml(sub.subject||'Subject')}</div><div class="sub">${t?escapeHtml(t.name):'Unassigned teacher'} · ${fmt(sub.monthlyFee)}/mo</div></div>
+      <div class="amt" style="color:${bal>0?'var(--danger)':'var(--success)'}">${bal>0?fmt(bal)+' due':'Settled'}</div>
     </div>`;
   }).join('') || `<div class="empty">No subjects added.</div>`;
   const rows = pays.length ? pays.map(p=>{
@@ -436,7 +470,7 @@ function openStudentForm(id){
   const editing = id ? DB.students.find(s=>s.id===id) : null;
   editingSubjects = (editing && editing.subjects && editing.subjects.length)
     ? editing.subjects.map(s=>({...s}))
-    : [{id: uid(), subject:'', teacherId:'', monthlyFee:''}];
+    : [{id: uid(), subject:'', teacherId:'', monthlyFee:'', enrolledMonth: ymNow()}];
   openSheet(editing?'Edit student':'Add student', `
     <label>Student name</label><input id="f_name" placeholder="e.g. Ali Raza" value="${editing?escapeHtml(editing.name):''}">
     <div class="row2">
@@ -455,16 +489,31 @@ function renderSubjectRows(){
     return `
     <div class="card" style="margin-bottom:8px;">
       <div class="row2">
-        <div><label>Subject</label><input id="sub_subject_${i}" placeholder="e.g. Physics" value="${escapeHtml(row.subject||'')}"></div>
+        <div><label>Subject</label><input id="sub_subject_${i}" placeholder="e.g. Physics" value="${escapeHtml(row.subject||'')}" oninput="autoAssignTeacher(${i})"></div>
         <div><label>Monthly fee (Rs)</label><input id="sub_fee_${i}" type="number" min="0" placeholder="5000" value="${row.monthlyFee||''}"></div>
       </div>
       <label>Teacher</label><select id="sub_teacher_${i}"><option value="">Unassigned</option>${teacherOpts}</select>
+      <div style="font-size:11px;color:var(--muted);margin-top:4px;">Auto-fills if a teacher already teaches this subject — change it below if needed.</div>
       ${editingSubjects.length>1?`<button class="btn danger-ghost small" style="margin-top:8px;" onclick="removeSubjectRow(${i})">Remove this subject</button>`:''}
     </div>`;
   }).join('');
 }
+// If a teacher already exists whose own subject matches what's being typed, pick them
+// automatically — only when the field is still empty/unassigned, so it never silently
+// overrides a teacher the owner picked on purpose.
+function autoAssignTeacher(i){
+  const subInput = document.getElementById('sub_subject_'+i);
+  const sel = document.getElementById('sub_teacher_'+i);
+  if(!subInput || !sel) return;
+  if(sel.value) return; // don't override an already-chosen teacher
+  const val = subInput.value.trim().toLowerCase();
+  if(!val) return;
+  const match = DB.teachers.find(t=>(t.subject||'').trim().toLowerCase()===val);
+  if(match) sel.value = match.id;
+}
 function syncSubjectsFromDOM(){
   editingSubjects = editingSubjects.map((row,i)=>({
+    ...row,
     id: row.id,
     subject: (document.getElementById('sub_subject_'+i)?.value ?? row.subject).trim(),
     teacherId: document.getElementById('sub_teacher_'+i)?.value || null,
@@ -473,7 +522,7 @@ function syncSubjectsFromDOM(){
 }
 function addSubjectRow(){
   syncSubjectsFromDOM();
-  editingSubjects.push({id: uid(), subject:'', teacherId:'', monthlyFee:''});
+  editingSubjects.push({id: uid(), subject:'', teacherId:'', monthlyFee:'', enrolledMonth: ymNow()});
   document.getElementById('subjectsContainer').innerHTML = renderSubjectRows();
 }
 function removeSubjectRow(i){
@@ -650,11 +699,12 @@ function openPaymentForm(presetStudentId){
 function computeSplits(s, totalAmount){
   const subs = (s && s.subjects) || [];
   if(!subs.length) return [];
-  const totalFee = subs.reduce((a,x)=>a+Number(x.monthlyFee||0),0);
+  const owed = subs.map(sub=>({sub, outstanding: subjectOutstanding(sub)}));
+  const totalOwed = owed.reduce((a,x)=>a+x.outstanding,0);
   const rounded = Math.round(Number(totalAmount)||0);
-  const raw = subs.map(sub=>{
-    const share = totalFee>0 ? Number(sub.monthlyFee||0)/totalFee : 1/subs.length;
-    return { sub, amount: Math.round(rounded*share) };
+  const raw = owed.map(x=>{
+    const share = totalOwed>0 ? x.outstanding/totalOwed : 1/subs.length;
+    return { sub:x.sub, amount: Math.round(rounded*share) };
   });
   const diff = rounded - raw.reduce((a,r)=>a+r.amount,0);
   if(raw.length) raw[raw.length-1].amount += diff; // fix rounding so it adds up exactly
@@ -674,11 +724,13 @@ function prefillFee(){
   const subs = (s && s.subjects) || [];
   document.getElementById('subjectBreakdown').innerHTML = subs.length ? subs.map(sub=>{
     const t = DB.teachers.find(t=>t.id===sub.teacherId);
+    const owed = subjectOutstanding(sub);
+    const carried = Math.max(0, owed - Number(sub.monthlyFee||0));
     return `<div class="ledger-row"><div><div class="who">${escapeHtml(sub.subject||'Subject')}</div>
-      <div class="sub">${t?escapeHtml(t.name):'Unassigned'}</div></div><div class="amt pos">${fmt(sub.monthlyFee)}</div></div>`;
+      <div class="sub">${t?escapeHtml(t.name):'Unassigned'}${carried>0?' · includes '+fmt(carried)+' carried over':''}</div></div><div class="amt pos">${fmt(owed)}</div></div>`;
   }).join('') : `<div class="empty">No subjects on this student.</div>`;
-  const totalFee = subs.reduce((a,x)=>a+Number(x.monthlyFee||0),0);
-  document.getElementById('p_amount').value = totalFee || '';
+  const totalOwed = subs.reduce((a,x)=>a+subjectOutstanding(x),0);
+  document.getElementById('p_amount').value = totalOwed || '';
   document.getElementById('p_month').value = monthLabel(todayISO());
   splitPreview();
 }
@@ -894,7 +946,7 @@ function clearAllData(){
 }
 
 // ---------- Sheet / modal ----------
-  function openSheet(title, bodyHtml){
+function openSheet(title, bodyHtml){
   document.getElementById('modalZone').innerHTML = `
     <div class="overlay" id="ov" onclick="if(event.target.id==='ov')closeSheet()">
       <div class="sheet">
@@ -916,28 +968,38 @@ function teacherStudents(teacherId){
   });
   return list;
 }
-// Has this student's fee for this specific subject been paid for the current month?
-// Matching is normalized (case/space/hyphen-insensitive) since the month field is free text.
-function normalizeMonth(str){ return String(str||'').toLowerCase().replace(/[\s-]/g,''); }
-function isSubjectPaidThisMonth(studentId, subjectEntryId){
-  const label = normalizeMonth(monthLabel(todayISO()));
-  return DB.payments.some(p=>{
-    if(p.studentId!==studentId) return false;
-    if(normalizeMonth(p.month)!==label) return false;
-    return paymentSplits(p).some(sp=>sp.subjectEntryId===subjectEntryId);
-  });
-}
-// Every (student, subject) not yet paid for the current month — this is what "start of
-// a new month" actually means for this app: nothing to re-add, this list just repopulates
-// itself automatically once the calendar rolls over, since it's computed live every time.
-function computePendingThisMonth(){
+// Every (student, subject) that currently has money outstanding — this is what "start of
+// a new month" means for this app: nothing to re-add, this list repopulates itself
+// automatically as each month's fee accrues, and correctly keeps any unpaid carryover
+// from before rather than wiping the slate clean.
+function computeOutstandingBalances(){
   const list = [];
   DB.students.forEach(s=>{
     (s.subjects||[]).forEach(sub=>{
-      if(!isSubjectPaidThisMonth(s.id, sub.id)) list.push({student:s, sub});
+      const balance = subjectOutstanding(sub);
+      if(balance>0) list.push({student:s, sub, balance});
     });
   });
   return list;
+}
+// Shared by both the per-payout slip and the full statement: every student assigned to
+// this teacher, and whether they currently owe anything (including any carried-over
+// balance from earlier months) — not just a flat "paid this month" flag.
+function teacherSummaryBlock(teacherId){
+  const assigned = teacherStudents(teacherId);
+  const settledCount = assigned.filter(x=>subjectOutstanding(x.sub)===0).length;
+  const owingCount = assigned.length - settledCount;
+  const studentRows = assigned.map(x=>{
+    const bal = subjectOutstanding(x.sub);
+    return `<div class="slip-row"><span class="k">${escapeHtml(x.student.name)}${x.student.className?' ('+escapeHtml(x.student.className)+')':''}</span>
+      <span style="color:${bal>0?'var(--danger)':'var(--success)'}">${fmt(x.sub.monthlyFee)}/mo · ${bal>0?fmt(bal)+' due':'Settled'}</span></div>`;
+  }).join('') || `<div class="empty">No students assigned yet.</div>`;
+  const html = `
+    <div style="border-top:1.5px dashed var(--line);margin:10px 0;"></div>
+    <div class="slip-row"><span class="k">Students</span><span>${assigned.length} total · ${settledCount} settled · ${owingCount} owing</span></div>
+    ${studentRows}
+  `;
+  return { html };
 }
 function generateSlip(type, recordId){
   let bodyHtml;
@@ -970,6 +1032,7 @@ function generateSlip(type, recordId){
     const p = DB.payouts.find(x=>x.id===recordId);
     const t = DB.teachers.find(x=>x.id===p.teacherId);
     const tt = teacherTotals(p.teacherId);
+    const summary = teacherSummaryBlock(p.teacherId);
     bodyHtml = `
       <div class="slip-head">
         <div class="aname">${escapeHtml(academyName)}</div>
@@ -980,26 +1043,16 @@ function generateSlip(type, recordId){
       <div class="slip-row"><span class="k">Subject</span><span>${escapeHtml(t?(t.subject||''):'')}</span></div>
       <div class="slip-row"><span class="k">Share</span><span>${t?t.sharePercent:'—'}%</span></div>
       <div class="slip-row"><span class="k">Date</span><span>${fmtDate(p.date)}</span></div>
-      <div class="slip-amount"><div class="n">${fmt(p.amount)}</div><div class="l">AMOUNT PAID</div></div>
-      <div class="slip-row"><span class="k">Remaining due</span><span>${fmt(Math.max(tt.due,0))}</span></div>
+      ${summary.html}
+      <div class="slip-amount"><div class="n">${fmt(p.amount)}</div><div class="l">AMOUNT PAID (this slip)</div></div>
+      <div class="slip-row"><span class="k">Remaining due (includes any earlier months)</span><span>${fmt(Math.max(tt.due,0))}</span></div>
       <div style="text-align:center;"><span class="slip-badge">${tt.due<=0?'SETTLED':'PARTIAL'}</span></div>
       <div class="slip-foot">Slip #${p.id.toUpperCase()}</div>
     `;
   } else if(type==='teacher_statement'){
     const t = DB.teachers.find(x=>x.id===recordId);
     const tt = teacherTotals(recordId);
-    const assigned = teacherStudents(recordId);
-    const paidCount = assigned.filter(x=>isSubjectPaidThisMonth(x.student.id, x.sub.id)).length;
-    const pendingCount = assigned.length - paidCount;
-    const totalMonthlyFee = assigned.reduce((a,x)=>a+Number(x.sub.monthlyFee||0),0);
-    const totalCollected = DB.payments.reduce((a,p)=>
-      a + paymentSplits(p).filter(sp=>sp.teacherId===recordId).reduce((b,sp)=>b+Number(sp.amount),0), 0);
-    const academyCut = totalCollected - tt.earned;
-    const studentRows = assigned.map(x=>{
-      const paid = isSubjectPaidThisMonth(x.student.id, x.sub.id);
-      return `<div class="slip-row"><span class="k">${escapeHtml(x.student.name)}${x.student.className?' ('+escapeHtml(x.student.className)+')':''}</span>
-        <span style="color:${paid?'var(--success)':'var(--danger)'}">${fmt(x.sub.monthlyFee)} · ${paid?'Paid':'Pending'}</span></div>`;
-    }).join('') || `<div class="empty">No students assigned yet.</div>`;
+    const summary = teacherSummaryBlock(recordId);
     bodyHtml = `
       <div class="slip-head">
         <div class="aname">${escapeHtml(academyName)}</div>
@@ -1010,16 +1063,9 @@ function generateSlip(type, recordId){
       <div class="slip-row"><span class="k">Subject</span><span>${escapeHtml(t?(t.subject||''):'')}</span></div>
       <div class="slip-row"><span class="k">Share</span><span>${t?t.sharePercent:'—'}%</span></div>
       <div class="slip-row"><span class="k">Month</span><span>${escapeHtml(monthLabel(todayISO()))}</span></div>
-      <div style="border-top:1.5px dashed var(--line);margin:10px 0;"></div>
-      <div class="slip-row"><span class="k">Students</span><span>${assigned.length} total · ${paidCount} paid · ${pendingCount} pending</span></div>
-      ${studentRows}
-      <div style="border-top:1.5px dashed var(--line);margin:10px 0;"></div>
-      <div class="slip-row"><span class="k">Monthly fee total (all students)</span><span>${fmt(totalMonthlyFee)}</span></div>
-      <div class="slip-row"><span class="k">Total collected (lifetime)</span><span>${fmt(totalCollected)}</span></div>
-      <div class="slip-row"><span class="k">Academy share</span><span>${fmt(academyCut)}</span></div>
-      <div class="slip-row"><span class="k">Teacher's share</span><span>${fmt(tt.earned)}</span></div>
+      ${summary.html}
       <div class="slip-row"><span class="k">Already paid to teacher</span><span>${fmt(tt.paid)}</span></div>
-      <div class="slip-amount"><div class="n">${fmt(tt.due)}</div><div class="l">${t&&isOwner(t)?'KEPT BY OWNER':'DUE NOW'}</div></div>
+      <div class="slip-amount"><div class="n">${fmt(tt.due)}</div><div class="l">${t&&isOwner(t)?'KEPT BY OWNER':'DUE NOW (includes any earlier months)'}</div></div>
       <div style="text-align:center;"><span class="slip-badge">${(t&&isOwner(t))||tt.due<=0?'SETTLED':'PENDING'}</span></div>
       <div class="slip-foot">Statement generated ${fmtDate(todayISO())}</div>
     `;
@@ -1064,7 +1110,7 @@ function escapeHtml(str){
 }
 
 // ---------- nav wiring ----------
-document.querySelectorAll('nav.tabs button').forEach(b=>{
+  document.querySelectorAll('nav.tabs button').forEach(b=>{
   b.addEventListener('click', ()=>{ currentTab = b.dataset.tab; render(); });
 });
 
