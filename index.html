@@ -41,7 +41,7 @@
     display:flex;flex-direction:column;position:relative;padding-bottom:76px;}
 
   header.top{background:var(--primary);color:var(--primary-ink);padding:18px 20px 16px;
-    position:sticky;top:0;z-index:5;}
+    position:sticky;top:0;z-index:5;box-shadow:0 2px 6px rgba(20,26,22,.12);}
   header.top .brand{font-size:13px;letter-spacing:.02em;opacity:.75;margin-bottom:2px;}
   header.top .title{font-size:22px;font-weight:700;}
 
@@ -50,10 +50,12 @@
   .section-label{font-size:12px;color:var(--muted);margin:18px 2px 8px;font-weight:600;}
   .section-label:first-child{margin-top:0;}
 
-  .card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;}
+  .card{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px;margin-bottom:12px;
+    box-shadow:0 1px 3px rgba(20,26,22,.05);}
 
   .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
-  .kpi{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px;}
+  .kpi{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:14px;
+    box-shadow:0 1px 3px rgba(20,26,22,.05);}
   .kpi .num{font-size:20px;font-weight:700;font-variant-numeric:tabular-nums;}
   .kpi .lbl{font-size:11.5px;color:var(--muted);margin-top:2px;}
   .kpi.accent{background:var(--primary);border-color:var(--primary);}
@@ -61,8 +63,10 @@
   .kpi.accent .lbl{opacity:.75;}
 
   .ledger-row{display:flex;justify-content:space-between;align-items:center;
-    padding:11px 2px;border-bottom:1px solid var(--line);gap:10px;}
+    padding:11px 2px;border-bottom:1px solid var(--line);gap:10px;transition:background-color .12s ease;}
   .ledger-row:last-child{border-bottom:none;}
+  .ledger-row[onclick]{cursor:pointer;margin:0 -8px;padding:11px 8px;border-radius:6px;}
+  .ledger-row[onclick]:active{background-color:var(--bg);}
   .ledger-row .who{font-weight:600;font-size:14.5px;}
   .ledger-row .sub{font-size:12px;color:var(--muted);margin-top:1px;}
   .ledger-row .amt{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap;}
@@ -76,11 +80,14 @@
 
   .btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;
     background:var(--primary);color:var(--primary-ink);border:none;border-radius:9px;
-    padding:11px 16px;font-size:14px;font-weight:600;cursor:pointer;width:100%;}
+    padding:11px 16px;font-size:14px;font-weight:600;cursor:pointer;width:100%;
+    transition:transform .1s ease, opacity .1s ease; -webkit-tap-highlight-color:transparent;}
+  .btn:active{transform:scale(.97);opacity:.92;}
   .btn.gold{background:var(--accent);color:var(--accent-ink);}
   .btn.ghost{background:transparent;color:var(--primary);border:1.5px solid var(--primary);}
   .btn.small{width:auto;padding:7px 12px;font-size:12.5px;}
   .btn.danger-ghost{background:transparent;color:var(--danger);border:1.5px solid var(--danger);}
+  .btn.whatsapp{background:#25D366;color:#fff;text-decoration:none;}
 
   .fab{position:fixed;left:50%;transform:translateX(-50%);bottom:88px;max-width:448px;width:calc(100% - 32px);z-index:6;}
 
@@ -92,20 +99,24 @@
   .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px;}
 
   nav.tabs{position:fixed;bottom:0;left:0;right:0;background:var(--paper);border-top:1px solid var(--line);
-    display:flex;max-width:480px;margin:0 auto;z-index:5;}
+    display:flex;max-width:480px;margin:0 auto;z-index:5;box-shadow:0 -2px 8px rgba(20,26,22,.05);}
   nav.tabs button{flex:1;background:none;border:none;padding:10px 2px 9px;font-size:10.5px;
-    color:var(--muted);font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;}
+    color:var(--muted);font-weight:600;display:flex;flex-direction:column;align-items:center;gap:3px;cursor:pointer;
+    transition:color .15s ease; -webkit-tap-highlight-color:transparent;}
   nav.tabs button.active{color:var(--primary);}
-  nav.tabs .ic{font-size:19px;line-height:1;}
+  nav.tabs .ic{display:inline-flex;line-height:1;}
 
   .subtabs{display:flex;gap:8px;margin-bottom:14px;}
   .subtabs button{flex:1;padding:9px;border-radius:8px;border:1.5px solid var(--line);background:var(--paper);
-    color:var(--muted);font-weight:600;font-size:13px;cursor:pointer;}
+    color:var(--muted);font-weight:600;font-size:13px;cursor:pointer;transition:background-color .15s ease;}
   .subtabs button.active{background:var(--primary);color:var(--primary-ink);border-color:var(--primary);}
 
-  .overlay{position:fixed;inset:0;background:rgba(20,26,22,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center;}
+  @keyframes sheetSlideUp{from{transform:translateY(28px);opacity:0;}to{transform:translateY(0);opacity:1;}}
+  @keyframes overlayFadeIn{from{opacity:0;}to{opacity:1;}}
+  .overlay{position:fixed;inset:0;background:rgba(20,26,22,.55);z-index:20;display:flex;align-items:flex-end;justify-content:center;
+    animation:overlayFadeIn .18s ease-out;}
   .sheet{background:var(--bg);width:100%;max-width:480px;border-radius:16px 16px 0 0;
-    max-height:92vh;overflow-y:auto;padding:18px 18px 24px;}
+    max-height:92vh;overflow-y:auto;padding:18px 18px 24px;animation:sheetSlideUp .22s cubic-bezier(.2,.8,.2,1);}
   .sheet-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
   .sheet-head h3{margin:0;font-size:17px;}
   .close-x{background:none;border:none;font-size:20px;color:var(--muted);cursor:pointer;padding:4px 8px;}
@@ -142,11 +153,11 @@
   <main id="main"></main>
   <div id="fabZone"></div>
   <nav class="tabs">
-    <button data-tab="dashboard" class="active"><span class="ic">🏠</span>Home</button>
-    <button data-tab="students"><span class="ic">🎓</span>Students</button>
-    <button data-tab="teachers"><span class="ic">🧑‍🏫</span>Teachers</button>
-    <button data-tab="money"><span class="ic">💵</span>Fees</button>
-    <button data-tab="expenses"><span class="ic">🧾</span>Expenses</button>
+    <button data-tab="dashboard" class="active"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8"/><path d="M5 10v10a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1V10"/></svg></span>Home</button>
+    <button data-tab="students"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 10L12 5 2 10l10 5 10-5Z"/><path d="M6 12v5c0 1.5 2.5 3 6 3s6-1.5 6-3v-5"/></svg></span>Students</button>
+    <button data-tab="teachers"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="7" r="4"/><path d="M4 21v-1a8 8 0 0 1 16 0v1"/></svg></span>Teachers</button>
+    <button data-tab="money"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9 9.5c0-1 1-1.5 2.5-1.5S14 8.7 14 9.8c0 2-5 1.7-5 3.9 0 1.1 1.2 1.8 2.5 1.8s2.5-.6 2.5-1.7"/><path d="M12 6.5v11"/></svg></span>Fees</button>
+    <button data-tab="expenses"><span class="ic"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2h9l3 3v17l-3-2-3 2-3-2-3 2V2Z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>Expenses</button>
   </nav>
 </div>
 <div id="modalZone"></div>
@@ -291,8 +302,8 @@ function subjectOutstanding(sub){
 }
 
 // ---------- app state ----------
-  let currentTab = 'dashboard';
-let moneySubtab = 'collect';
+let currentTab = 'dashboard';
+let moneySubtab = 'outstanding';
 
 function showToast(msg){
   const t = document.createElement('div');
@@ -302,7 +313,7 @@ function showToast(msg){
 }
 
 // ---------- derived calcs ----------
-// A payment can cover several of a student's subjects at once (e.g. Physics + English
+  // A payment can cover several of a student's subjects at once (e.g. Physics + English
 // paid together). paymentSplits() returns the per-subject breakdown for a payment,
 // whether it's a new multi-subject payment (has `.splits`) or an older single-subject
 // one (has subjectEntryId/subjectName/teacherId directly on it).
@@ -349,7 +360,8 @@ function render(){
   else if(currentTab==='students'){ main.innerHTML = renderStudents(); fab.innerHTML = fabBtn('+ Add student','openStudentForm()'); }
   else if(currentTab==='teachers'){ main.innerHTML = renderTeachers(); fab.innerHTML = fabBtn('+ Add teacher','openTeacherForm()'); }
   else if(currentTab==='money'){ main.innerHTML = renderMoney();
-    fab.innerHTML = fabBtn(moneySubtab==='collect' ? '+ Collect fee' : '+ Pay teacher',
+    fab.innerHTML = moneySubtab==='outstanding' ? '' :
+      fabBtn(moneySubtab==='collect' ? '+ Collect fee' : '+ Pay teacher',
       moneySubtab==='collect' ? 'openPaymentForm()' : 'openPayoutForm()'); }
   else if(currentTab==='expenses'){ main.innerHTML = renderExpenses(); fab.innerHTML = fabBtn('+ Add expense','openExpenseForm()'); }
 }
@@ -365,8 +377,6 @@ function renderDashboard(){
   const totalExpenses = DB.expenses.reduce((a,e)=>a+Number(e.amount),0);
   const net = academyShare - totalExpenses;
   const myTotal = DB.teachers.filter(isOwner).reduce((a,t)=>a+teacherTotals(t.id).earned,0);
-  const pending = computeOutstandingBalances();
-  const pendingTotal = pending.reduce((a,x)=>a+x.balance,0);
 
   const recent = [
     ...DB.payments.map(p=>({t:'fee', date:p.date, name:(DB.students.find(s=>s.id===p.studentId)||{}).name||'Student', amount:p.amount})),
@@ -381,15 +391,18 @@ function renderDashboard(){
       <div class="amt ${r.t==='fee'?'pos':'neg'}">${r.t==='fee'?'+':'−'}${fmt(r.amount)}</div>
     </div>`).join('') : `<div class="empty">No activity yet — start by collecting a fee.</div>`;
 
-  let pendingHtml = pending.length ? pending.map(x=>{
-    const t = DB.teachers.find(t=>t.id===x.sub.teacherId);
-    const carried = Math.max(0, x.balance - Number(x.sub.monthlyFee||0));
-    return `<div class="ledger-row" onclick="openPaymentForm('${x.student.id}')" style="cursor:pointer;">
+  // Every student currently enrolled in whatever subject(s) the owner personally teaches.
+  const ownerTeacherIds = new Set(DB.teachers.filter(isOwner).map(t=>t.id));
+  const myStudents = [];
+  DB.students.forEach(s=>{ (s.subjects||[]).forEach(sub=>{ if(ownerTeacherIds.has(sub.teacherId)) myStudents.push({student:s, sub}); }); });
+  let myStudentsHtml = myStudents.length ? myStudents.map(x=>{
+    const bal = subjectOutstanding(x.sub);
+    return `<div class="ledger-row" onclick="openStudentDetail('${x.student.id}')" style="cursor:pointer;">
       <div><div class="who">${escapeHtml(x.student.name)}</div>
-        <div class="sub">${escapeHtml(x.sub.subject||'Subject')}${t?' · '+escapeHtml(t.name):''}${carried>0?' · includes '+fmt(carried)+' carried over':''}</div></div>
-      <div class="amt neg">${fmt(x.balance)}</div>
+        <div class="sub">${escapeHtml(x.student.className||'—')} · ${escapeHtml(x.sub.subject||'Subject')}</div></div>
+      <div class="amt" style="color:${bal>0?'var(--danger)':'var(--success)'}">${bal>0?fmt(bal)+' due':'Settled'}</div>
     </div>`;
-  }).join('') : `<div class="empty">Everyone's paid up! 🎉</div>`;
+  }).join('') : `<div class="empty">${ownerTeacherIds.size?'No students enrolled in your subject yet.':'Set your name as "Owner name" in Settings to see your own students here.'}</div>`;
 
   return `
     <div class="kpi-grid">
@@ -398,10 +411,10 @@ function renderDashboard(){
       <div class="kpi"><div class="num" style="color:${teacherDue>0?'var(--danger)':'var(--success)'}">${fmt(teacherDue)}</div><div class="lbl">Owed to teachers</div></div>
       <div class="kpi"><div class="num">${fmt(net)}</div><div class="lbl">Net (after expenses)</div></div>
       <div class="kpi accent"><div class="num">${fmt(myTotal)}</div><div class="lbl">Your teaching income</div></div>
-      <div class="kpi"><div class="num" style="color:${pending.length>0?'var(--danger)':'var(--success)'}">${fmt(pendingTotal)}</div><div class="lbl">Outstanding fees (${pending.length})</div></div>
+      <div class="kpi"><div class="num">${DB.students.length}</div><div class="lbl">Students enrolled</div></div>
     </div>
-    <div class="section-label">Outstanding fees</div>
-    <div class="card">${pendingHtml}</div>
+    <div class="section-label">Your students${myStudents.length?' ('+myStudents.length+')':''}</div>
+    <div class="card">${myStudentsHtml}</div>
     <div class="section-label">Recent activity</div>
     <div class="card">${recentHtml}</div>
   `;
@@ -410,19 +423,27 @@ function renderDashboard(){
 // ---------- Students ----------
 function renderStudents(){
   if(!DB.students.length) return `<div class="empty">No students yet. Tap "+ Add student" to get started.</div>`;
-  const rows = DB.students.map(s=>{
-    const paid = studentPaidTotal(s.id);
-    const subsLabel = (s.subjects||[]).map(sub=>{
-      const t = DB.teachers.find(t=>t.id===sub.teacherId);
-      return escapeHtml(sub.subject||'Subject') + (t?' ('+escapeHtml(t.name)+')':'');
-    }).join(', ') || '—';
-    return `<div class="ledger-row" onclick="openStudentDetail('${s.id}')" style="cursor:pointer;">
-      <div><div class="who">${escapeHtml(s.name)}</div>
-        <div class="sub">${escapeHtml(s.className||'—')} · ${subsLabel}</div></div>
-      <div class="amt pos">${fmt(paid)}</div>
-    </div>`;
+  const groups = []; const groupIndex = {};
+  DB.students.forEach(s=>{
+    const key = (s.className||'').trim() || 'Unassigned';
+    if(!(key in groupIndex)){ groupIndex[key]=groups.length; groups.push({key, students:[]}); }
+    groups[groupIndex[key]].students.push(s);
+  });
+  return groups.map(g=>{
+    const rows = g.students.map(s=>{
+      const paid = studentPaidTotal(s.id);
+      const subsLabel = (s.subjects||[]).map(sub=>{
+        const t = DB.teachers.find(t=>t.id===sub.teacherId);
+        return escapeHtml(sub.subject||'Subject') + (t?' ('+escapeHtml(t.name)+')':'');
+      }).join(', ') || '—';
+      return `<div class="ledger-row" onclick="openStudentDetail('${s.id}')" style="cursor:pointer;">
+        <div><div class="who">${escapeHtml(s.name)}</div>
+          <div class="sub">${subsLabel}</div></div>
+        <div class="amt pos">${fmt(paid)}</div>
+      </div>`;
+    }).join('');
+    return `<div class="section-label">${escapeHtml(g.key)} (${g.students.length})</div><div class="card">${rows}</div>`;
   }).join('');
-  return `<div class="card">${rows}</div>`;
 }
 function openStudentDetail(id){
   const s = DB.students.find(x=>x.id===id); if(!s) return;
@@ -554,7 +575,7 @@ function saveStudent(id){
 }
 
 // ---------- Teachers ----------
-  function renderTeachers(){
+function renderTeachers(){
   if(!DB.teachers.length) return `<div class="empty">No teachers yet. Tap "+ Add teacher" to get started.</div>`;
   const rows = DB.teachers.map(t=>{
     const tt = teacherTotals(t.id);
@@ -640,10 +661,22 @@ function saveTeacher(id){
 // ---------- Money (Fees / Payouts) ----------
 function renderMoney(){
   let html = `<div class="subtabs">
+    <button class="${moneySubtab==='outstanding'?'active':''}" onclick="setMoneySubtab('outstanding')">Outstanding</button>
     <button class="${moneySubtab==='collect'?'active':''}" onclick="setMoneySubtab('collect')">Fees collected</button>
     <button class="${moneySubtab==='payout'?'active':''}" onclick="setMoneySubtab('payout')">Teacher payouts</button>
   </div>`;
-  if(moneySubtab==='collect'){
+  if(moneySubtab==='outstanding'){
+    const pending = computeOutstandingBalances();
+    html += `<div class="section-label" style="margin-top:0;">${pending.length} student${pending.length===1?'':'s'} with fees pending</div>`;
+    html += pending.length ? `<div class="card">${pending.map(x=>{
+      const subLabel = x.subs.map(o=>escapeHtml(o.sub.subject||'Subject')+' '+fmt(o.balance)).join(', ');
+      return `<div class="ledger-row" onclick="openPaymentForm('${x.student.id}')" style="cursor:pointer;">
+        <div><div class="who">${escapeHtml(x.student.name)}</div>
+          <div class="sub">${escapeHtml(x.student.className||'—')} · ${subLabel}</div></div>
+        <div class="amt neg">${fmt(x.total)}</div>
+      </div>`;
+    }).join('')}</div>` : `<div class="empty">Everyone's paid up! 🎉</div>`;
+  } else if(moneySubtab==='collect'){
     const list = [...DB.payments].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
     html += list.length ? `<div class="card">${list.map(p=>{
       const s = DB.students.find(s=>s.id===p.studentId);
@@ -791,7 +824,7 @@ function savePayout(){
 }
 
 // ---------- Expenses ----------
-  function renderExpenses(){
+function renderExpenses(){
   if(!DB.expenses.length) return `<div class="empty">No expenses logged yet.</div>`;
   const list = [...DB.expenses].sort((a,b)=>(b.date||'').localeCompare(a.date||''));
   const rows = list.map(e=>`
@@ -956,9 +989,9 @@ function openSheet(title, bodyHtml){
     </div>`;
 }
 function closeSheet(){ document.getElementById('modalZone').innerHTML=''; }
-
+  
 // ---------- Slip generation ----------
-// All of a teacher's (student, subject-entry) assignments across every student
+  // All of a teacher's (student, subject-entry) assignments across every student
 function teacherStudents(teacherId){
   const list = [];
   DB.students.forEach(s=>{
@@ -968,17 +1001,15 @@ function teacherStudents(teacherId){
   });
   return list;
 }
-// Every (student, subject) that currently has money outstanding — this is what "start of
-// a new month" means for this app: nothing to re-add, this list repopulates itself
-// automatically as each month's fee accrues, and correctly keeps any unpaid carryover
-// from before rather than wiping the slate clean.
+// Every student who currently owes something (across any of their subjects) — grouped per
+// student, not per subject, so "5 pending" means 5 students, and a student disappears
+// from this list the moment their combined balance is fully paid off.
 function computeOutstandingBalances(){
   const list = [];
   DB.students.forEach(s=>{
-    (s.subjects||[]).forEach(sub=>{
-      const balance = subjectOutstanding(sub);
-      if(balance>0) list.push({student:s, sub, balance});
-    });
+    const owedSubs = (s.subjects||[]).map(sub=>({sub, balance: subjectOutstanding(sub)})).filter(x=>x.balance>0);
+    const total = owedSubs.reduce((a,x)=>a+x.balance,0);
+    if(total>0) list.push({student:s, total, subs:owedSubs});
   });
   return list;
 }
@@ -1002,7 +1033,7 @@ function teacherSummaryBlock(teacherId){
   return { html };
 }
 function generateSlip(type, recordId){
-  let bodyHtml;
+  let bodyHtml, waUrl = null;
   const academyName = DB.settings.academyName || 'My Academy';
   const academyContact = DB.settings.contact ? 'Contact: '+DB.settings.contact : '';
   if(type==='fee'){
@@ -1012,6 +1043,7 @@ function generateSlip(type, recordId){
     const itemRows = splits.map(sp=>
       `<div class="slip-row"><span class="k">${escapeHtml(sp.subjectName||'Subject')}</span><span>${fmt(sp.amount)}</span></div>`
     ).join('');
+    waUrl = whatsappLink(s?.phone, `Hi ${s?s.name:''}, here is your fee receipt from ${academyName}${p.month?' for '+p.month:''}. Amount received: Rs ${fmt(p.amount)}. Thank you!`);
     bodyHtml = `
       <div class="slip-head">
         <div class="aname">${escapeHtml(academyName)}</div>
@@ -1033,6 +1065,7 @@ function generateSlip(type, recordId){
     const t = DB.teachers.find(x=>x.id===p.teacherId);
     const tt = teacherTotals(p.teacherId);
     const summary = teacherSummaryBlock(p.teacherId);
+    waUrl = whatsappLink(t?.phone, `Hi ${t?t.name:''}, here is your payment slip from ${academyName}. Amount paid: Rs ${fmt(p.amount)}.`);
     bodyHtml = `
       <div class="slip-head">
         <div class="aname">${escapeHtml(academyName)}</div>
@@ -1053,6 +1086,7 @@ function generateSlip(type, recordId){
     const t = DB.teachers.find(x=>x.id===recordId);
     const tt = teacherTotals(recordId);
     const summary = teacherSummaryBlock(recordId);
+    waUrl = whatsappLink(t?.phone, `Hi ${t?t.name:''}, here is your latest statement from ${academyName}.`);
     bodyHtml = `
       <div class="slip-head">
         <div class="aname">${escapeHtml(academyName)}</div>
@@ -1073,6 +1107,7 @@ function generateSlip(type, recordId){
   openSheet('Slip preview', `
     <div class="slip-wrap"><div id="slipCapture">${bodyHtml}</div></div>
     <button class="btn gold" onclick="shareSlip()">Share as image</button>
+    ${waUrl?`<a class="btn whatsapp" style="margin-top:10px;" href="${waUrl}" target="_blank" rel="noopener">Open on WhatsApp</a>`:''}
     <button class="btn ghost" style="margin-top:10px;" onclick="closeSheet()">Close</button>
   `);
 }
@@ -1108,9 +1143,19 @@ function escapeHtml(str){
   if(str==null) return '';
   return String(str).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 }
+// Builds a wa.me link that opens WhatsApp directly on this person's chat (skipping the
+// need to search for their name/number). A local "03xx-xxxxxxx" number is converted to
+// international format assuming Pakistan (+92); a number already saved with a country
+// code or a leading + is left as-is.
+function whatsappLink(phone, text){
+  let digits = String(phone||'').replace(/[^\d]/g,'');
+  if(!digits) return null;
+  if(digits.startsWith('0')) digits = '92'+digits.slice(1);
+  return `https://wa.me/${digits}${text?'?text='+encodeURIComponent(text):''}`;
+}
 
 // ---------- nav wiring ----------
-  document.querySelectorAll('nav.tabs button').forEach(b=>{
+document.querySelectorAll('nav.tabs button').forEach(b=>{
   b.addEventListener('click', ()=>{ currentTab = b.dataset.tab; render(); });
 });
 
